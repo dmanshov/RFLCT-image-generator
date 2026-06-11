@@ -52,10 +52,15 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [health, setHealth] = useState<{ gemini: boolean; anthropic: boolean } | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "local" | "error">("idle");
 
   const running = Object.values(stage).some((s) => s === "busy");
+  // Pas met opslaan beginnen nadat de instellingen (DB of cache) geladen zijn,
+  // zodat we de net geladen waarden niet meteen terugschrijven.
+  const ready = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // ── persistente voorkeuren ────────────────────────────────────────────────
+  // ── instellingen laden: eerst lokale cache, dan autoritatief uit de DB ─────
   useEffect(() => {
     try {
       const saved = localStorage.getItem("rflct:prefs");
@@ -68,18 +73,55 @@ export default function Page() {
     } catch {
       /* ignore */
     }
+
     fetch("/api/health")
       .then((r) => r.json())
       .then(setHealth)
       .catch(() => setHealth(null));
+
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.persisted && d.settings) {
+          if (typeof d.settings.brandContext === "string") setBrandContext(d.settings.brandContext);
+          if (d.settings.params) setParams((p) => ({ ...DEFAULT_PARAMS, ...p, ...d.settings.params }));
+          if (d.settings.mode) setMode(d.settings.mode);
+        }
+      })
+      .catch(() => {
+        /* DB onbereikbaar → we blijven op lokale cache draaien */
+      })
+      .finally(() => {
+        ready.current = true;
+      });
   }, []);
 
+  // ── instellingen opslaan: lokale cache direct + gedebouncede DB-save ───────
   useEffect(() => {
     try {
       localStorage.setItem("rflct:prefs", JSON.stringify({ params, brandContext, mode }));
     } catch {
       /* ignore */
     }
+    if (!ready.current) return;
+
+    setSaveState("saving");
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brandContext, params, mode }),
+        });
+        if (res.ok) setSaveState("saved");
+        else if (res.status === 503) setSaveState("local");
+        else if (res.status === 401) window.location.href = "/login";
+        else setSaveState("error");
+      } catch {
+        setSaveState("error");
+      }
+    }, 800);
   }, [params, brandContext, mode]);
 
   // ── helpers ───────────────────────────────────────────────────────────────
@@ -103,6 +145,10 @@ export default function Page() {
     });
     const data = await res.json();
     if (!res.ok) {
+      // Sessie verlopen of niet ingelogd → terug naar de loginpagina.
+      if (res.status === 401 && (data as ApiError).kind === "auth") {
+        window.location.href = "/login";
+      }
       throw new Error((data as ApiError).error || `Fout (${res.status}).`);
     }
     return data as T;
@@ -215,6 +261,15 @@ export default function Page() {
 
   const surprise = () => setParams((p) => ({ ...p, ...randomParams() }));
 
+  const logout = async () => {
+    try {
+      await fetch("/api/login", { method: "DELETE" });
+    } catch {
+      /* negeer */
+    }
+    window.location.href = "/login";
+  };
+
   const canGenerate =
     !running &&
     (mode === "params" ||
@@ -243,9 +298,14 @@ export default function Page() {
             Genereer een voor/na-reeks + Nederlandse caption voor je socials.
           </p>
         </div>
-        <button className="btn-ghost" onClick={() => setShowSettings((v) => !v)}>
-          ⚙︎ Instellingen
-        </button>
+        <div className="flex gap-2">
+          <button className="btn-ghost" onClick={() => setShowSettings((v) => !v)}>
+            ⚙︎ Instellingen
+          </button>
+          <button className="btn-ghost" onClick={logout}>
+            ⎋ Uitloggen
+          </button>
+        </div>
       </header>
 
       {health && (!health.gemini || !health.anthropic) && (
@@ -260,7 +320,12 @@ export default function Page() {
 
       {showSettings && (
         <div className="card mb-5 p-4">
-          <label className="field-label">RFLCT merk-context & toon (wordt aan Claude meegegeven)</label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="field-label mb-0">
+              RFLCT merk-context & toon (wordt aan Claude meegegeven)
+            </label>
+            <SaveBadge state={saveState} />
+          </div>
           <textarea
             className="field min-h-[120px]"
             value={brandContext}
@@ -269,6 +334,10 @@ export default function Page() {
           <button className="btn-ghost mt-2" onClick={() => setBrandContext(DEFAULT_BRAND_CONTEXT)}>
             Herstel standaardtekst
           </button>
+          <p className="mt-2 text-xs text-brand-400">
+            Wijzigingen worden automatisch opgeslagen in de database (Vercel/Neon) en gelden op al je
+            toestellen. Zonder database vallen we terug op opslag in deze browser.
+          </p>
         </div>
       )}
 
@@ -455,6 +524,18 @@ export default function Page() {
       </footer>
     </main>
   );
+}
+
+function SaveBadge({ state }: { state: "idle" | "saving" | "saved" | "local" | "error" }) {
+  if (state === "idle") return null;
+  const map = {
+    saving: { text: "Opslaan…", cls: "text-brand-400" },
+    saved: { text: "✓ Opgeslagen in database", cls: "text-emerald-600" },
+    local: { text: "Lokaal opgeslagen (geen database)", cls: "text-accent-600" },
+    error: { text: "✕ Opslaan mislukt", cls: "text-red-600" },
+  } as const;
+  const { text, cls } = map[state];
+  return <span className={`text-xs font-medium ${cls}`}>{text}</span>;
 }
 
 function Select({

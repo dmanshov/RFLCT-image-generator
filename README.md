@@ -39,6 +39,7 @@ npm run dev
 | -------------------- | ----------------------- | -------------- |
 | `GEMINI_API_KEY`     | Beeldgeneratie          | <https://aistudio.google.com/app/apikey> |
 | `ANTHROPIC_API_KEY`  | Caption + toelichting   | <https://console.anthropic.com/settings/keys> |
+| `APP_PASSWORD`       | Login (alleen jij)      | kies zelf een sterk wachtwoord |
 
 Optioneel kan je het beeldmodel (`GEMINI_IMAGE_MODEL`, standaard
 `gemini-2.5-flash-image`) en het caption-model (`ANTHROPIC_MODEL`, standaard
@@ -46,6 +47,18 @@ Optioneel kan je het beeldmodel (`GEMINI_IMAGE_MODEL`, standaard
 
 De app toont bovenaan een waarschuwing zolang een sleutel ontbreekt, en geeft
 duidelijke foutmeldingen bij ongeldige sleutels of geblokkeerde generaties.
+
+## Login (single-user)
+
+De volledige app — pagina's én API-routes — is afgeschermd met een wachtwoord.
+Stel `APP_PASSWORD` in (lokaal in `.env.local`, op Vercel als Environment
+Variable) en log in op `/login`. Na een correcte login wordt een ondertekend,
+`httpOnly` sessie-cookie gezet (HMAC met `APP_PASSWORD` als sleutel) dat niet te
+vervalsen is. Een [`middleware`](src/middleware.ts) blokkeert elk verzoek zonder
+geldige sessie, dus niemand kan beelden genereren zonder in te loggen. Uitloggen
+kan rechtsboven in de app.
+
+> Verander je `APP_PASSWORD`, dan worden alle bestaande sessies meteen ongeldig.
 
 ## Parameters voor variatie
 
@@ -55,7 +68,21 @@ knop **🎲 Verras me** zet willekeurige waarden. De keuzelijsten staan in
 [`src/lib/options.ts`](src/lib/options.ts) en zijn vrij aan te passen.
 
 Via **⚙︎ Instellingen** pas je de RFLCT-merkcontext/toon aan die aan Claude wordt
-meegegeven. Je voorkeuren worden lokaal in de browser bewaard.
+meegegeven.
+
+### Instellingen bewaren (Vercel Postgres / Neon)
+
+Je instellingen (merk-context/toon en je laatst gebruikte parameters) worden
+opgeslagen in een **Neon Postgres**-database, zodat ze deployments overleven en
+op al je toestellen gelijk zijn. Wijzigingen worden automatisch (gedebounced)
+weggeschreven.
+
+- Voeg op Vercel de **Neon**- of **Postgres**-integratie toe; die zet
+  automatisch `DATABASE_URL` (of `POSTGRES_URL`). De app maakt zelf de tabel
+  `app_settings` aan bij het eerste gebruik.
+- Lokaal: plak de pooled connection string in `DATABASE_URL` in `.env.local`.
+- Geen database ingesteld? Dan valt de app netjes terug op opslag in de browser
+  (localStorage) — alles blijft werken, enkel niet gedeeld tussen toestellen.
 
 ## Hoe het in elkaar zit
 
