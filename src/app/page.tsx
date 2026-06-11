@@ -6,10 +6,11 @@ import {
   LIGHTING,
   PROPERTY_TYPES,
   ROOM_TYPES,
+  SERVICES,
   STYLES,
   randomParams,
 } from "@/lib/options";
-import { DEFAULT_BRAND_CONTEXT } from "@/lib/prompts";
+import { DEFAULT_BRAND_CONTEXT, DEFAULT_PROMPTS, type PromptKey, type PromptSet } from "@/lib/prompts";
 import type { GenerationParams, InputMode } from "@/lib/types";
 
 type Stage = "before" | "after" | "caption";
@@ -21,8 +22,18 @@ const DEFAULT_PARAMS: GenerationParams = {
   style: STYLES[0],
   lighting: LIGHTING[0],
   aspect: "4:5",
+  service: "retouch",
   extra: "",
 };
+
+// Welke prompt-sjablonen in de instellingen bewerkbaar zijn.
+const PROMPT_FIELDS: { key: PromptKey; label: string; hint: string }[] = [
+  { key: "beforeParams", label: "Voor-foto · uit parameters", hint: "{style} {roomType} {propertyType} {lighting} {framing} {extra}" },
+  { key: "beforeReference", label: "Voor-foto · uit referentie (URL/upload)", hint: "{extra}" },
+  { key: "afterStaging", label: "Na-foto · virtual staging (renovatie)", hint: "{lighting} {extra}" },
+  { key: "afterRetouch", label: "Na-foto · fotoretouche", hint: "{lighting} {framing} {extra}" },
+  { key: "caption", label: "Caption · Claude", hint: "{brandContext} {roomType} {service}" },
+];
 
 interface ApiError {
   error: string;
@@ -37,7 +48,9 @@ export default function Page() {
   const [uploadDataUrl, setUploadDataUrl] = useState<string | null>(null);
   const [uploadName, setUploadName] = useState<string>("");
   const [brandContext, setBrandContext] = useState(DEFAULT_BRAND_CONTEXT);
+  const [prompts, setPrompts] = useState<PromptSet>(DEFAULT_PROMPTS);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPrompts, setShowPrompts] = useState(false);
 
   const [beforeImg, setBeforeImg] = useState<string | null>(null);
   const [afterImg, setAfterImg] = useState<string | null>(null);
@@ -69,6 +82,7 @@ export default function Page() {
         if (p.params) setParams({ ...DEFAULT_PARAMS, ...p.params });
         if (typeof p.brandContext === "string") setBrandContext(p.brandContext);
         if (p.mode) setMode(p.mode);
+        if (p.prompts) setPrompts({ ...DEFAULT_PROMPTS, ...p.prompts });
       }
     } catch {
       /* ignore */
@@ -86,6 +100,7 @@ export default function Page() {
           if (typeof d.settings.brandContext === "string") setBrandContext(d.settings.brandContext);
           if (d.settings.params) setParams((p) => ({ ...DEFAULT_PARAMS, ...p, ...d.settings.params }));
           if (d.settings.mode) setMode(d.settings.mode);
+          if (d.settings.prompts) setPrompts((pr) => ({ ...DEFAULT_PROMPTS, ...pr, ...d.settings.prompts }));
         }
       })
       .catch(() => {
@@ -99,7 +114,7 @@ export default function Page() {
   // ── instellingen opslaan: lokale cache direct + gedebouncede DB-save ───────
   useEffect(() => {
     try {
-      localStorage.setItem("rflct:prefs", JSON.stringify({ params, brandContext, mode }));
+      localStorage.setItem("rflct:prefs", JSON.stringify({ params, brandContext, mode, prompts }));
     } catch {
       /* ignore */
     }
@@ -112,7 +127,7 @@ export default function Page() {
         const res = await fetch("/api/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ brandContext, params, mode }),
+          body: JSON.stringify({ brandContext, params, mode, prompts }),
         });
         if (res.ok) setSaveState("saved");
         else if (res.status === 503) setSaveState("local");
@@ -122,7 +137,7 @@ export default function Page() {
         setSaveState("error");
       }
     }, 800);
-  }, [params, brandContext, mode]);
+  }, [params, brandContext, mode, prompts]);
 
   // ── helpers ───────────────────────────────────────────────────────────────
   const setParam = <K extends keyof GenerationParams>(k: K, v: GenerationParams[K]) =>
@@ -162,6 +177,7 @@ export default function Page() {
         params,
         url: mode === "url" ? url : undefined,
         uploadDataUrl: mode === "upload" ? uploadDataUrl : undefined,
+        promptTemplate: mode === "params" ? prompts.beforeParams : prompts.beforeReference,
       });
       setBeforeImg(image);
       setStage((s) => ({ ...s, before: "done" }));
@@ -170,7 +186,7 @@ export default function Page() {
       setStage((s) => ({ ...s, before: "error" }));
       throw e;
     }
-  }, [mode, params, url, uploadDataUrl]);
+  }, [mode, params, url, uploadDataUrl, prompts]);
 
   const runAfter = useCallback(
     async (before: string): Promise<string> => {
@@ -179,6 +195,7 @@ export default function Page() {
         const { image } = await postJson<{ image: string }>("/api/after", {
           params,
           beforeDataUrl: before,
+          promptTemplate: params.service === "staging" ? prompts.afterStaging : prompts.afterRetouch,
         });
         setAfterImg(image);
         setStage((s) => ({ ...s, after: "done" }));
@@ -188,7 +205,7 @@ export default function Page() {
         throw e;
       }
     },
-    [params]
+    [params, prompts]
   );
 
   const runCaption = useCallback(
@@ -200,6 +217,7 @@ export default function Page() {
           beforeDataUrl: before,
           afterDataUrl: after,
           brandContext,
+          promptTemplate: prompts.caption,
         });
         setCaption(data.caption);
         setToelichting(data.toelichting);
@@ -209,7 +227,7 @@ export default function Page() {
         throw e;
       }
     },
-    [params, brandContext]
+    [params, brandContext, prompts]
   );
 
   const generateAll = async () => {
@@ -338,6 +356,55 @@ export default function Page() {
             Wijzigingen worden automatisch opgeslagen in de database (Vercel/Neon) en gelden op al je
             toestellen. Zonder database vallen we terug op opslag in deze browser.
           </p>
+
+          <div className="mt-5 border-t border-brand-200 pt-4">
+            <button
+              className="flex w-full items-center justify-between text-left"
+              onClick={() => setShowPrompts((v) => !v)}
+            >
+              <span className="text-sm font-semibold text-brand-900">
+                Prompts aanpassen (geavanceerd)
+              </span>
+              <span className="text-brand-400">{showPrompts ? "▲" : "▼"}</span>
+            </button>
+
+            {showPrompts && (
+              <div className="mt-3 space-y-5">
+                <p className="text-xs text-brand-400">
+                  Pas de instructies aan die naar de AI gestuurd worden. Gebruik de placeholders
+                  tussen accolades — die worden automatisch ingevuld. <code>{"{extra}"}</code> wordt
+                  jouw "extra wensen" (of leeg). Wijzigingen worden mee opgeslagen in de database.
+                </p>
+                {PROMPT_FIELDS.map((f) => (
+                  <div key={f.key}>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <label className="field-label mb-0">{f.label}</label>
+                      <button
+                        className="btn-ghost px-2 py-0.5 text-[11px]"
+                        onClick={() => setPrompts((p) => ({ ...p, [f.key]: DEFAULT_PROMPTS[f.key] }))}
+                      >
+                        Herstel
+                      </button>
+                    </div>
+                    <textarea
+                      className="field min-h-[140px] font-mono text-xs leading-relaxed"
+                      value={prompts[f.key]}
+                      onChange={(e) => setPrompts((p) => ({ ...p, [f.key]: e.target.value }))}
+                    />
+                    <p className="mt-1 text-[11px] text-brand-400">
+                      Placeholders: <code>{f.hint}</code>
+                    </p>
+                  </div>
+                ))}
+                <button
+                  className="btn-ghost"
+                  onClick={() => setPrompts(DEFAULT_PROMPTS)}
+                >
+                  Herstel alle prompts naar standaard
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -408,6 +475,27 @@ export default function Page() {
               gegenereerd.
             </p>
           )}
+
+          <div className="mb-4">
+            <label className="field-label">Dienst (bepaalt de "na"-foto)</label>
+            <div className="grid grid-cols-2 gap-2">
+              {SERVICES.map((s) => (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => setParam("service", s.value)}
+                  className={`rounded-lg border p-2 text-left transition-colors ${
+                    params.service === s.value
+                      ? "border-accent-400 bg-amber-50 ring-1 ring-accent-400"
+                      : "border-brand-200 bg-white hover:bg-brand-50"
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-brand-900">{s.label}</div>
+                  <div className="mt-0.5 text-[11px] leading-snug text-brand-500">{s.hint}</div>
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-500">

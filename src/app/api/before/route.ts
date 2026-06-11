@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { geminiGenerateImage } from "@/lib/gemini";
 import { fetchImageFromUrl } from "@/lib/fetchImage";
-import { beforeFromParamsPrompt, beforeFromReferencePrompt } from "@/lib/prompts";
+import { DEFAULT_PROMPTS, renderImagePrompt } from "@/lib/prompts";
 import { errorResponse } from "@/lib/apiError";
 import { fromDataUrl, toDataUrl, type GenerationParams, type ImagePayload, type InputMode } from "@/lib/types";
 
@@ -16,6 +16,8 @@ interface BeforeBody {
   url?: string;
   /** voor mode "upload": data-URL */
   uploadDataUrl?: string;
+  /** optioneel eigen prompt-sjabloon */
+  promptTemplate?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -32,9 +34,11 @@ export async function POST(req: NextRequest) {
       reference = fromDataUrl(body.uploadDataUrl);
     }
 
-    const prompt = reference ? beforeFromReferencePrompt(params) : beforeFromParamsPrompt(params);
+    const template =
+      body.promptTemplate?.trim() ||
+      (reference ? DEFAULT_PROMPTS.beforeReference : DEFAULT_PROMPTS.beforeParams);
     const image = await geminiGenerateImage({
-      prompt,
+      prompt: renderImagePrompt(template, params),
       images: reference ? [reference] : undefined,
     });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isDbConfigured } from "@/lib/db";
 import { loadSettings, saveSettings } from "@/lib/settings";
 import { DEFAULT_BRAND_CONTEXT } from "@/lib/prompts";
+import type { PromptSet } from "@/lib/prompts";
 import type { GenerationParams, InputMode } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -35,11 +36,13 @@ export async function PUT(req: NextRequest) {
       brandContext?: string;
       params?: Partial<GenerationParams>;
       mode?: InputMode;
+      prompts?: Partial<PromptSet>;
     };
     await saveSettings({
       brandContext: String(body.brandContext ?? ""),
       params: body.params,
       mode: body.mode,
+      prompts: body.prompts,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

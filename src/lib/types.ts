@@ -1,5 +1,14 @@
 export type InputMode = "url" | "upload" | "params";
 
+/**
+ * Welke RFLCT-dienst de "na"-foto uitlicht:
+ * - "staging": virtual staging — compositie blijft identiek, ruimte mag volledig
+ *   gerenoveerd/heringericht worden.
+ * - "retouch": fotoretouche — geen renovatie en geen nieuwe elementen, wel
+ *   opruimen/herschikken/herbelichten; compositie mag wijzigen.
+ */
+export type ServiceType = "staging" | "retouch";
+
 export interface GenerationParams {
   roomType: string;
   propertyType: string;
@@ -7,6 +16,8 @@ export interface GenerationParams {
   lighting: string;
   /** Beeldverhouding, bv "4:5" */
   aspect: string;
+  /** Welke dienst de na-foto uitlicht. */
+  service: ServiceType;
   /** Vrije extra wensen van de gebruiker. */
   extra?: string;
 }

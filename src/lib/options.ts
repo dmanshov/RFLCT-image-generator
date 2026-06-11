@@ -53,6 +53,19 @@ export const LIGHTING = [
   "gezellige avond met warme lampen",
 ];
 
+export const SERVICES = [
+  {
+    value: "retouch" as const,
+    label: "Fotoretouche",
+    hint: "Zelfde ruimte, professioneel opgeruimd & gefotografeerd (geen nieuwe elementen). Compositie mag wijzigen.",
+  },
+  {
+    value: "staging" as const,
+    label: "Virtual staging",
+    hint: "Ruimte volledig gerenoveerd/heringericht. Camerahoek & compositie blijven identiek.",
+  },
+];
+
 export const ASPECTS = [
   { value: "4:5", label: "Portret 4:5 (Instagram feed)" },
   { value: "1:1", label: "Vierkant 1:1" },

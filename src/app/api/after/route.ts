@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { geminiGenerateImage } from "@/lib/gemini";
-import { afterPrompt } from "@/lib/prompts";
+import { DEFAULT_PROMPTS, renderImagePrompt } from "@/lib/prompts";
 import { errorResponse } from "@/lib/apiError";
 import { fromDataUrl, toDataUrl, type GenerationParams } from "@/lib/types";
 
@@ -12,6 +12,8 @@ interface AfterBody {
   params: GenerationParams;
   /** de "voor"-foto als data-URL */
   beforeDataUrl: string;
+  /** optioneel eigen prompt-sjabloon */
+  promptTemplate?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -21,8 +23,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Geen 'voor'-foto meegegeven." }, { status: 400 });
     }
     const before = fromDataUrl(body.beforeDataUrl);
+    const fallback =
+      body.params.service === "staging" ? DEFAULT_PROMPTS.afterStaging : DEFAULT_PROMPTS.afterRetouch;
+    const template = body.promptTemplate?.trim() || fallback;
     const image = await geminiGenerateImage({
-      prompt: afterPrompt(body.params),
+      prompt: renderImagePrompt(template, body.params),
       images: [before],
     });
     return NextResponse.json({ image: toDataUrl(image) });

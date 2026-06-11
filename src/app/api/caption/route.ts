@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateCaption } from "@/lib/anthropic";
-import { captionPrompt, DEFAULT_BRAND_CONTEXT } from "@/lib/prompts";
+import { DEFAULT_BRAND_CONTEXT, DEFAULT_PROMPTS, renderCaptionPrompt } from "@/lib/prompts";
 import { errorResponse } from "@/lib/apiError";
 import { fromDataUrl, type GenerationParams } from "@/lib/types";
 
@@ -13,6 +13,7 @@ interface CaptionBody {
   beforeDataUrl: string;
   afterDataUrl: string;
   brandContext?: string;
+  promptTemplate?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -23,10 +24,11 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await generateCaption({
-      prompt: captionPrompt({
-        params: body.params,
-        brandContext: body.brandContext?.trim() || DEFAULT_BRAND_CONTEXT,
-      }),
+      prompt: renderCaptionPrompt(
+        body.promptTemplate?.trim() || DEFAULT_PROMPTS.caption,
+        body.params,
+        body.brandContext?.trim() || DEFAULT_BRAND_CONTEXT
+      ),
       before: fromDataUrl(body.beforeDataUrl),
       after: fromDataUrl(body.afterDataUrl),
     });

@@ -68,7 +68,24 @@ knop **🎲 Verras me** zet willekeurige waarden. De keuzelijsten staan in
 [`src/lib/options.ts`](src/lib/options.ts) en zijn vrij aan te passen.
 
 Via **⚙︎ Instellingen** pas je de RFLCT-merkcontext/toon aan die aan Claude wordt
-meegegeven.
+meegegeven, én — onder *Prompts aanpassen (geavanceerd)* — de volledige
+AI-instructies (sjablonen) voor elke stap. Gebruik placeholders tussen accolades
+(bv. `{roomType}`, `{lighting}`, `{framing}`, `{extra}`, `{brandContext}`,
+`{service}`); die worden automatisch ingevuld. Elke prompt heeft een
+*Herstel*-knop. Ook deze prompts worden in de database bewaard.
+
+### Twee diensten (bepaalt de "na"-foto)
+
+Per post kies je welke RFLCT-dienst je uitlicht; dat bepaalt het "na"-resultaat:
+
+- **Fotoretouche** — dezelfde ruimte, *niet* gerenoveerd en *geen nieuwe
+  elementen*, maar wél opgeruimd, herschikt, professioneel belicht en
+  gefotografeerd. De compositie/camerahoek mag wijzigen.
+- **Virtual staging** — de ruimte mag volledig gerenoveerd en heringericht
+  worden, maar de **compositie (camerahoek, kader) blijft exact gelijk** aan de
+  voor-foto, zodat voor/na perfect overlappen.
+
+Elke dienst heeft een eigen, apart bewerkbaar prompt-sjabloon.
 
 ### Instellingen bewaren (Vercel Postgres / Neon)
 
