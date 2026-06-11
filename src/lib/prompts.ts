@@ -29,13 +29,16 @@ const REALISM = [
  */
 export function beforeFromReferencePrompt(params: GenerationParams): string {
   return [
-    "You are recreating a real estate listing photo as an ORIGINAL, copyright-free image.",
-    "Look at the reference photo and recreate a similar-feeling room: keep the same room type, general layout, furniture style and overall vibe,",
-    "but DO NOT copy it exactly — invent a plausibly different, original space so there is no copyright issue.",
-    `Keep the same amateur, low-quality real-estate-listing look as a typical mediocre Immoweb/Zimmo ad: flat phone-camera lighting, an ordinary or slightly awkward camera angle, a slightly cluttered and lived-in space, somewhat dated styling.`,
+    "You are recreating the room from the reference photo as an ORIGINAL, copyright-free image.",
+    "Recreate it AS FAITHFULLY AS POSSIBLE so it is immediately recognizable as the same room: keep the same room type and layout,",
+    "the same camera viewpoint, angle and framing, the same furniture in the same positions, the same wall and floor colours and materials,",
+    "the same windows, doors, proportions and the same overall lighting and mood. The result should look almost like the same photo.",
+    "To avoid copyright issues, change ONLY minor, incidental and replaceable details — e.g. the exact artwork on the walls, the specific decorative objects, books, plants, cushions, patterns and small props.",
+    "Never change the layout, the furniture placement, the architecture or the camera angle.",
+    "Keep the same amateur, low-quality real-estate-listing look as the reference: flat phone-camera lighting, an ordinary or slightly awkward camera angle, a slightly cluttered and lived-in space, somewhat dated styling.",
     params.extra ? `Extra context to respect: ${params.extra}.` : "",
     REALISM,
-    `Output a single photo with ${framing(params.aspect)}.`,
+    "Output a single photo that closely matches the reference's composition and framing.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -65,14 +68,20 @@ export function beforeFromParamsPrompt(params: GenerationParams): string {
  */
 export function afterPrompt(params: GenerationParams): string {
   return [
-    "You are a top-tier professional real estate photographer rephotographing THIS EXACT SAME ROOM shown in the provided image.",
-    "Critical rule: it is the SAME physical space. Do NOT add, remove or invent architecture, windows, doors, walls or NEW furniture. Keep the same room shape, the same windows and doors in the same places, and the same existing furniture and objects.",
-    "Do exactly what a real photographer would do on the shoot day to make it advertisement-worthy:",
-    "declutter and tidy up, remove only loose mess and clutter, choose a better and more flattering camera angle and composition, straighten the vertical lines,",
-    "apply bright, clean, balanced professional real-estate lighting, and tastefully restage and rearrange the EXISTING furniture and props for a more inviting look.",
-    `Lighting mood: ${params.lighting}.`,
-    params.extra ? `Also respect: ${params.extra}.` : "",
-    "The two images must clearly read as the same room, before and after a professional shoot.",
+    "The provided image is an amateur 'BEFORE' real estate photo. You are an award-winning professional real estate photographer and home stylist.",
+    "Produce the 'AFTER': a striking, magazine-quality real estate photo of THIS EXACT SAME ROOM.",
+    "Keep the same physical space: the same room shape, the same windows and doors in the same places, the same walls and floor, and the same TYPES of main furniture. Do NOT invent a different room and do NOT add new architecture or extra big furniture pieces.",
+    "",
+    "CRUCIAL: the improvement must be DRAMATIC and immediately obvious — a clear 'wow' difference compared to the before. Do NOT return the before image unchanged or only slightly changed. Apply everything a top photographer + stylist does on a professional shoot:",
+    "• Declutter completely — remove all loose mess, clutter, cables, dishes, laundry, random clutter and personal items so the space looks clean, tidy and spacious.",
+    "• Lighting transformation — turn flat, dull, dim phone lighting into bright, airy, professional real-estate lighting: lifted shadows, clean neutral white balance, a luminous HDR-like glow, sunlight gently coming through the windows.",
+    "• Composition — choose a stronger, wider, well-balanced camera angle with perfectly straight vertical and horizontal lines and a clean, deliberate framing.",
+    "• Styling — restage and rearrange the existing furniture into an inviting, magazine-worthy layout, fluff and straighten textiles, and add only subtle, natural finishing touches that a stylist would bring (e.g. a neatly folded throw, fresh flowers or a plant, neatly arranged cushions) — tasteful and minimal, fitting the room.",
+    "• Finish — crisp professional color grading, rich but natural colors, a warm and inviting yet realistic ambiance, clean and polished overall.",
+    `• Lighting mood: ${params.lighting}.`,
+    params.extra ? `• Also respect: ${params.extra}.` : "",
+    "",
+    "The two photos must clearly read as the SAME room before and after, but the after must look dramatically brighter, cleaner, tidier, better composed and more professional than the before.",
     REALISM,
     `Output a single photo with ${framing(params.aspect)}.`,
   ]
