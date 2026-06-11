@@ -1,0 +1,580 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ASPECTS,
+  LIGHTING,
+  PROPERTY_TYPES,
+  ROOM_TYPES,
+  STYLES,
+  randomParams,
+} from "@/lib/options";
+import { DEFAULT_BRAND_CONTEXT } from "@/lib/prompts";
+import type { GenerationParams, InputMode } from "@/lib/types";
+
+type Stage = "before" | "after" | "caption";
+type StageState = "idle" | "busy" | "done" | "error";
+
+const DEFAULT_PARAMS: GenerationParams = {
+  roomType: ROOM_TYPES[0],
+  propertyType: PROPERTY_TYPES[0],
+  style: STYLES[0],
+  lighting: LIGHTING[0],
+  aspect: "4:5",
+  extra: "",
+};
+
+interface ApiError {
+  error: string;
+  kind?: string;
+  provider?: string;
+}
+
+export default function Page() {
+  const [mode, setMode] = useState<InputMode>("params");
+  const [params, setParams] = useState<GenerationParams>(DEFAULT_PARAMS);
+  const [url, setUrl] = useState("");
+  const [uploadDataUrl, setUploadDataUrl] = useState<string | null>(null);
+  const [uploadName, setUploadName] = useState<string>("");
+  const [brandContext, setBrandContext] = useState(DEFAULT_BRAND_CONTEXT);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const [beforeImg, setBeforeImg] = useState<string | null>(null);
+  const [afterImg, setAfterImg] = useState<string | null>(null);
+  const [caption, setCaption] = useState("");
+  const [toelichting, setToelichting] = useState("");
+
+  const [stage, setStage] = useState<Record<Stage, StageState>>({
+    before: "idle",
+    after: "idle",
+    caption: "idle",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [health, setHealth] = useState<{ gemini: boolean; anthropic: boolean } | null>(null);
+
+  const running = Object.values(stage).some((s) => s === "busy");
+
+  // ── persistente voorkeuren ────────────────────────────────────────────────
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("rflct:prefs");
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (p.params) setParams({ ...DEFAULT_PARAMS, ...p.params });
+        if (typeof p.brandContext === "string") setBrandContext(p.brandContext);
+        if (p.mode) setMode(p.mode);
+      }
+    } catch {
+      /* ignore */
+    }
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then(setHealth)
+      .catch(() => setHealth(null));
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("rflct:prefs", JSON.stringify({ params, brandContext, mode }));
+    } catch {
+      /* ignore */
+    }
+  }, [params, brandContext, mode]);
+
+  // ── helpers ───────────────────────────────────────────────────────────────
+  const setParam = <K extends keyof GenerationParams>(k: K, v: GenerationParams[K]) =>
+    setParams((p) => ({ ...p, [k]: v }));
+
+  const onUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setUploadDataUrl(reader.result as string);
+      setUploadName(file.name);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  async function postJson<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error((data as ApiError).error || `Fout (${res.status}).`);
+    }
+    return data as T;
+  }
+
+  const runBefore = useCallback(async (): Promise<string> => {
+    setStage((s) => ({ ...s, before: "busy" }));
+    try {
+      const { image } = await postJson<{ image: string }>("/api/before", {
+        mode,
+        params,
+        url: mode === "url" ? url : undefined,
+        uploadDataUrl: mode === "upload" ? uploadDataUrl : undefined,
+      });
+      setBeforeImg(image);
+      setStage((s) => ({ ...s, before: "done" }));
+      return image;
+    } catch (e) {
+      setStage((s) => ({ ...s, before: "error" }));
+      throw e;
+    }
+  }, [mode, params, url, uploadDataUrl]);
+
+  const runAfter = useCallback(
+    async (before: string): Promise<string> => {
+      setStage((s) => ({ ...s, after: "busy" }));
+      try {
+        const { image } = await postJson<{ image: string }>("/api/after", {
+          params,
+          beforeDataUrl: before,
+        });
+        setAfterImg(image);
+        setStage((s) => ({ ...s, after: "done" }));
+        return image;
+      } catch (e) {
+        setStage((s) => ({ ...s, after: "error" }));
+        throw e;
+      }
+    },
+    [params]
+  );
+
+  const runCaption = useCallback(
+    async (before: string, after: string) => {
+      setStage((s) => ({ ...s, caption: "busy" }));
+      try {
+        const data = await postJson<{ caption: string; toelichting: string }>("/api/caption", {
+          params,
+          beforeDataUrl: before,
+          afterDataUrl: after,
+          brandContext,
+        });
+        setCaption(data.caption);
+        setToelichting(data.toelichting);
+        setStage((s) => ({ ...s, caption: "done" }));
+      } catch (e) {
+        setStage((s) => ({ ...s, caption: "error" }));
+        throw e;
+      }
+    },
+    [params, brandContext]
+  );
+
+  const generateAll = async () => {
+    setError(null);
+    setBeforeImg(null);
+    setAfterImg(null);
+    setCaption("");
+    setToelichting("");
+    setStage({ before: "idle", after: "idle", caption: "idle" });
+    try {
+      const before = await runBefore();
+      const after = await runAfter(before);
+      await runCaption(before, after);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  // Losse hergeneratie-acties.
+  const regenBefore = async () => {
+    setError(null);
+    try {
+      const before = await runBefore();
+      const after = await runAfter(before);
+      await runCaption(before, after);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const regenAfter = async () => {
+    if (!beforeImg) return;
+    setError(null);
+    try {
+      const after = await runAfter(beforeImg);
+      await runCaption(beforeImg, after);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const regenCaption = async () => {
+    if (!beforeImg || !afterImg) return;
+    setError(null);
+    try {
+      await runCaption(beforeImg, afterImg);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const surprise = () => setParams((p) => ({ ...p, ...randomParams() }));
+
+  const canGenerate =
+    !running &&
+    (mode === "params" ||
+      (mode === "url" && url.trim().length > 0) ||
+      (mode === "upload" && Boolean(uploadDataUrl)));
+
+  const copyCaption = async () => {
+    try {
+      await navigator.clipboard.writeText(caption);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setError("Kon niet naar het klembord kopiëren (browser blokkeert dit mogelijk).");
+    }
+  };
+
+  // ── render ──────────────────────────────────────────────────────────────
+  return (
+    <main className="mx-auto max-w-6xl px-4 py-8">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-brand-900">
+            RFLCT · Vastgoedfoto Generator
+          </h1>
+          <p className="text-sm text-brand-500">
+            Genereer een voor/na-reeks + Nederlandse caption voor je socials.
+          </p>
+        </div>
+        <button className="btn-ghost" onClick={() => setShowSettings((v) => !v)}>
+          ⚙︎ Instellingen
+        </button>
+      </header>
+
+      {health && (!health.gemini || !health.anthropic) && (
+        <div className="card mb-5 border-accent-400 bg-amber-50 p-4 text-sm text-brand-800">
+          <strong>Let op — API-sleutels ontbreken.</strong>{" "}
+          {!health.gemini && "De Gemini-sleutel (beeld) is niet ingesteld. "}
+          {!health.anthropic && "De Anthropic-sleutel (caption) is niet ingesteld. "}
+          Voeg ze toe in <code className="rounded bg-white px-1">.env.local</code> (zie{" "}
+          <code className="rounded bg-white px-1">.env.example</code>) en herstart de app.
+        </div>
+      )}
+
+      {showSettings && (
+        <div className="card mb-5 p-4">
+          <label className="field-label">RFLCT merk-context & toon (wordt aan Claude meegegeven)</label>
+          <textarea
+            className="field min-h-[120px]"
+            value={brandContext}
+            onChange={(e) => setBrandContext(e.target.value)}
+          />
+          <button className="btn-ghost mt-2" onClick={() => setBrandContext(DEFAULT_BRAND_CONTEXT)}>
+            Herstel standaardtekst
+          </button>
+        </div>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+        {/* ── Bedieningspaneel ── */}
+        <section className="card h-fit p-5">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-500">
+            1 · Vertrekpunt
+          </h2>
+          <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-brand-100 p-1">
+            {(
+              [
+                ["params", "Parameters"],
+                ["url", "URL"],
+                ["upload", "Upload"],
+              ] as [InputMode, string][]
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+                  mode === m ? "bg-white text-brand-900 shadow-sm" : "text-brand-500 hover:text-brand-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {mode === "url" && (
+            <div className="mb-4">
+              <label className="field-label">Link naar referentiefoto (Immoweb/Zimmo)</label>
+              <input
+                className="field"
+                placeholder="https://…/foto.jpg"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-brand-400">
+                Geef de directe link naar de afbeelding. Er wordt een originele, copyright-veilige
+                gelijkaardige ruimte gegenereerd.
+              </p>
+            </div>
+          )}
+
+          {mode === "upload" && (
+            <div className="mb-4">
+              <label className="field-label">Referentiefoto uploaden</label>
+              <input
+                type="file"
+                accept="image/*"
+                className="field"
+                onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])}
+              />
+              {uploadDataUrl && (
+                <div className="mt-2 flex items-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={uploadDataUrl} alt="referentie" className="h-14 w-14 rounded object-cover" />
+                  <span className="text-xs text-brand-500">{uploadName}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {mode === "params" && (
+            <p className="mb-4 text-xs text-brand-400">
+              Geen referentie nodig — de "voor"-foto wordt volledig uit onderstaande parameters
+              gegenereerd.
+            </p>
+          )}
+
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-500">
+              2 · Parameters
+            </h2>
+            <button className="btn-ghost px-2 py-1 text-xs" onClick={surprise} disabled={running}>
+              🎲 Verras me
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            <Select label="Ruimte" value={params.roomType} onChange={(v) => setParam("roomType", v)} options={ROOM_TYPES} />
+            <Select label="Vastgoedtype" value={params.propertyType} onChange={(v) => setParam("propertyType", v)} options={PROPERTY_TYPES} />
+            <Select label="Stijl" value={params.style} onChange={(v) => setParam("style", v)} options={STYLES} />
+            <Select label="Licht / sfeer (na)" value={params.lighting} onChange={(v) => setParam("lighting", v)} options={LIGHTING} />
+            <div>
+              <label className="field-label">Beeldverhouding</label>
+              <select className="field" value={params.aspect} onChange={(e) => setParam("aspect", e.target.value)}>
+                {ASPECTS.map((a) => (
+                  <option key={a.value} value={a.value}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="field-label">Extra wensen (optioneel)</label>
+              <input
+                className="field"
+                placeholder="bv. uitzicht op zee, planten, parket…"
+                value={params.extra ?? ""}
+                onChange={(e) => setParam("extra", e.target.value)}
+              />
+            </div>
+          </div>
+
+          <button className="btn-accent mt-5 w-full" onClick={generateAll} disabled={!canGenerate}>
+            {running ? "Bezig…" : "✨ Genereer voor/na + caption"}
+          </button>
+
+          <ProgressList stage={stage} />
+        </section>
+
+        {/* ── Resultaten ── */}
+        <section className="space-y-6">
+          {error && (
+            <div className="card border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+          )}
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <ResultCard
+              title="Voor"
+              badge="Matige advertentiefoto"
+              image={beforeImg}
+              busy={stage.before === "busy"}
+              filenameBase="rflct-voor"
+              onRegen={regenBefore}
+              regenLabel="Nieuwe 'voor'"
+              regenDisabled={running || !canGenerate}
+            />
+            <ResultCard
+              title="Na"
+              badge="Professioneel · RFLCT"
+              image={afterImg}
+              busy={stage.after === "busy"}
+              filenameBase="rflct-na"
+              onRegen={regenAfter}
+              regenLabel="Nieuwe 'na'"
+              regenDisabled={running || !beforeImg}
+              highlight
+            />
+          </div>
+
+          <div className="card p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-500">
+                3 · Caption
+              </h3>
+              <div className="flex gap-2">
+                <button className="btn-ghost px-2 py-1 text-xs" onClick={regenCaption} disabled={running || !afterImg}>
+                  ↻ Opnieuw
+                </button>
+                <button className="btn-primary px-3 py-1 text-xs" onClick={copyCaption} disabled={!caption}>
+                  {copied ? "✓ Gekopieerd" : "📋 Kopieer caption"}
+                </button>
+              </div>
+            </div>
+            {stage.caption === "busy" ? (
+              <div className="animate-pulse text-sm text-brand-400">Caption wordt geschreven…</div>
+            ) : caption ? (
+              <>
+                <textarea
+                  className="field min-h-[140px] font-medium leading-relaxed"
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                />
+                {toelichting && (
+                  <p className="mt-3 rounded-lg bg-brand-50 p-3 text-xs text-brand-600">
+                    <strong>Toelichting (voor jezelf):</strong> {toelichting}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-brand-400">
+                Nog geen caption. Start een generatie om voor/na-beelden en een caption te krijgen.
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <footer className="mt-10 text-center text-xs text-brand-400">
+        RFLCT · beelden via Google Gemini, caption via Anthropic Claude. Controleer beelden steeds op realisme voor je post.
+      </footer>
+    </main>
+  );
+}
+
+function Select({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: readonly string[];
+}) {
+  return (
+    <div>
+      <label className="field-label">{label}</label>
+      <select className="field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function ProgressList({ stage }: { stage: Record<Stage, StageState> }) {
+  const rows: [Stage, string][] = [
+    ["before", "Voor-foto genereren"],
+    ["after", "Professionele na-foto"],
+    ["caption", "Caption schrijven"],
+  ];
+  const icon = (s: StageState) =>
+    s === "done" ? "✓" : s === "busy" ? "●" : s === "error" ? "✕" : "○";
+  const color = (s: StageState) =>
+    s === "done"
+      ? "text-emerald-600"
+      : s === "busy"
+      ? "text-accent-600 animate-pulse"
+      : s === "error"
+      ? "text-red-600"
+      : "text-brand-300";
+  if (rows.every(([k]) => stage[k] === "idle")) return null;
+  return (
+    <ul className="mt-4 space-y-1 text-sm">
+      {rows.map(([k, label]) => (
+        <li key={k} className="flex items-center gap-2">
+          <span className={`w-4 text-center font-bold ${color(stage[k])}`}>{icon(stage[k])}</span>
+          <span className={stage[k] === "idle" ? "text-brand-400" : "text-brand-700"}>{label}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ResultCard({
+  title,
+  badge,
+  image,
+  busy,
+  filenameBase,
+  onRegen,
+  regenLabel,
+  regenDisabled,
+  highlight,
+}: {
+  title: string;
+  badge: string;
+  image: string | null;
+  busy: boolean;
+  filenameBase: string;
+  onRegen: () => void;
+  regenLabel: string;
+  regenDisabled: boolean;
+  highlight?: boolean;
+}) {
+  const download = () => {
+    if (!image) return;
+    const ext = image.startsWith("data:image/jpeg") ? "jpg" : "png";
+    const a = document.createElement("a");
+    a.href = image;
+    a.download = `${filenameBase}-${Date.now()}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  return (
+    <div className={`card overflow-hidden ${highlight ? "ring-2 ring-accent-400" : ""}`}>
+      <div className="flex items-center justify-between px-4 py-3">
+        <div>
+          <span className="text-sm font-semibold text-brand-900">{title}</span>
+          <span className="ml-2 rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-brand-500">
+            {badge}
+          </span>
+        </div>
+      </div>
+      <div className="relative aspect-[4/5] w-full bg-brand-100">
+        {busy ? (
+          <div className="flex h-full items-center justify-center">
+            <span className="animate-pulse text-sm text-brand-400">Genereren…</span>
+          </div>
+        ) : image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={image} alt={title} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-brand-300">
+            Nog geen beeld
+          </div>
+        )}
+      </div>
+      <div className="flex gap-2 p-3">
+        <button className="btn-primary flex-1" onClick={download} disabled={!image}>
+          ⬇︎ Download
+        </button>
+        <button className="btn-ghost" onClick={onRegen} disabled={regenDisabled}>
+          ↻ {regenLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
