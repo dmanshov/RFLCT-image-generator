@@ -41,6 +41,33 @@ interface ApiError {
   provider?: string;
 }
 
+// Verkleint een data-URL naar een redelijke max-afmeting en exporteert als JPEG.
+// Gebruikt om de payload klein te houden (Vercel-limiet ~4,5 MB), bv. wanneer we
+// twee beelden naar de caption-stap sturen.
+async function downscaleDataUrl(dataUrl: string, maxDim = 1024, quality = 0.85): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(dataUrl);
+      ctx.drawImage(img, 0, 0, w, h);
+      try {
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 export default function Page() {
   const [mode, setMode] = useState<InputMode>("params");
   const [params, setParams] = useState<GenerationParams>(DEFAULT_PARAMS);
@@ -158,13 +185,32 @@ export default function Page() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
+    // Lees als tekst en probeer JSON te parsen. Sommige fouten (bv. een te grote
+    // payload → 413) geven een lege of niet-JSON body terug; res.json() zou dan
+    // in Safari falen met "The string did not match the expected pattern.".
+    const text = await res.text();
+    let data: (Partial<ApiError> & Record<string, unknown>) | null = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = null;
+      }
+    }
+
     if (!res.ok) {
-      // Sessie verlopen of niet ingelogd → terug naar de loginpagina.
-      if (res.status === 401 && (data as ApiError).kind === "auth") {
+      if (res.status === 401 && data?.kind === "auth") {
         window.location.href = "/login";
       }
-      throw new Error((data as ApiError).error || `Fout (${res.status}).`);
+      const message =
+        (data?.error as string) ||
+        (res.status === 413
+          ? "De afbeeldingen zijn te groot voor de server (limiet ~4,5 MB). Probeer opnieuw — de beelden worden nu automatisch verkleind voor de caption."
+          : `Server gaf een fout (${res.status}).`);
+      throw new Error(message);
+    }
+    if (!data) {
+      throw new Error("Onverwacht antwoord van de server (geen geldige JSON).");
     }
     return data as T;
   }
@@ -212,10 +258,16 @@ export default function Page() {
     async (before: string, after: string) => {
       setStage((s) => ({ ...s, caption: "busy" }));
       try {
+        // Verklein beide beelden voor de caption: Claude heeft geen volledige
+        // resolutie nodig en zo blijven we ruim onder de payload-limiet.
+        const [beforeSmall, afterSmall] = await Promise.all([
+          downscaleDataUrl(before),
+          downscaleDataUrl(after),
+        ]);
         const data = await postJson<{ caption: string; toelichting: string }>("/api/caption", {
           params,
-          beforeDataUrl: before,
-          afterDataUrl: after,
+          beforeDataUrl: beforeSmall,
+          afterDataUrl: afterSmall,
           brandContext,
           promptTemplate: prompts.caption,
         });
@@ -276,6 +328,26 @@ export default function Page() {
       await runCaption(beforeImg, afterImg);
     } catch (e) {
       setError((e as Error).message);
+    }
+  };
+
+  // Fine-tune: neem het reeds gegenereerde beeld als basis en pas enkel de
+  // meegegeven instructie toe. Vervangt het betreffende beeld bij succes.
+  const fineTune = async (which: "before" | "after", instruction: string): Promise<boolean> => {
+    const current = which === "before" ? beforeImg : afterImg;
+    if (!current || !instruction.trim()) return false;
+    setError(null);
+    try {
+      const { image } = await postJson<{ image: string }>("/api/finetune", {
+        image: current,
+        instruction,
+      });
+      if (which === "before") setBeforeImg(image);
+      else setAfterImg(image);
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
     }
   };
 
@@ -581,6 +653,8 @@ export default function Page() {
               onRegen={generateBefore}
               regenLabel="Nieuwe 'voor'"
               regenDisabled={running || !canGenerate}
+              onFineTune={(instr) => fineTune("before", instr)}
+              fineTuneDisabled={running}
             />
             <ResultCard
               title="Na"
@@ -591,6 +665,8 @@ export default function Page() {
               onRegen={regenAfter}
               regenLabel="Nieuwe 'na'"
               regenDisabled={running || !beforeImg}
+              onFineTune={(instr) => fineTune("after", instr)}
+              fineTuneDisabled={running}
               highlight
             />
           </div>
@@ -715,6 +791,8 @@ function ResultCard({
   onRegen,
   regenLabel,
   regenDisabled,
+  onFineTune,
+  fineTuneDisabled,
   highlight,
 }: {
   title: string;
@@ -725,8 +803,21 @@ function ResultCard({
   onRegen: () => void;
   regenLabel: string;
   regenDisabled: boolean;
+  onFineTune: (instruction: string) => Promise<boolean>;
+  fineTuneDisabled: boolean;
   highlight?: boolean;
 }) {
+  const [instruction, setInstruction] = useState("");
+  const [ftBusy, setFtBusy] = useState(false);
+
+  const runFineTune = async () => {
+    if (!instruction.trim()) return;
+    setFtBusy(true);
+    const ok = await onFineTune(instruction);
+    setFtBusy(false);
+    if (ok) setInstruction("");
+  };
+
   const download = () => {
     if (!image) return;
     const ext = image.startsWith("data:image/jpeg") ? "jpg" : "png";
@@ -749,9 +840,11 @@ function ResultCard({
         </div>
       </div>
       <div className="relative aspect-[4/5] w-full bg-brand-100">
-        {busy ? (
+        {busy || ftBusy ? (
           <div className="flex h-full items-center justify-center">
-            <span className="animate-pulse text-sm text-brand-400">Genereren…</span>
+            <span className="animate-pulse text-sm text-brand-400">
+              {ftBusy ? "Bijwerken…" : "Genereren…"}
+            </span>
           </div>
         ) : image ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -770,6 +863,34 @@ function ResultCard({
           ↻ {regenLabel}
         </button>
       </div>
+
+      {image && (
+        <div className="border-t border-brand-100 px-3 pb-3 pt-2">
+          <label className="field-label">Fine-tunen (enkel wat je hier vraagt wijzigt)</label>
+          <div className="flex gap-2">
+            <input
+              className="field"
+              placeholder="bv. maak het wat lichter, verwijder de stoel links…"
+              value={instruction}
+              disabled={ftBusy || fineTuneDisabled}
+              onChange={(e) => setInstruction(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") runFineTune();
+              }}
+            />
+            <button
+              className="btn-accent"
+              onClick={runFineTune}
+              disabled={ftBusy || fineTuneDisabled || !instruction.trim()}
+            >
+              {ftBusy ? "…" : "Pas toe"}
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-brand-400">
+            Vertrekt van dit beeld en houdt al de rest consistent. Verbruikt 1 Gemini-credit.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

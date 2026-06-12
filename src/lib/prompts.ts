@@ -139,6 +139,25 @@ export function renderImagePrompt(
   return tidy(stripLegacyPlaceholders(template)) + imageContext(key, params);
 }
 
+/**
+ * Prompt om een reeds gegenereerd beeld verder bij te werken op basis van een
+ * korte front-end instructie. De back-end voorziet hier zelf de strikte
+ * consistentie-instructies, zodat de gebruiker enkel hoeft te schrijven WAT er
+ * moet wijzigen (geen full-detail prompt nodig).
+ */
+export function renderFineTunePrompt(instruction: string): string {
+  return [
+    "You are fine-tuning an EXISTING image. The provided image is the base and must stay almost entirely unchanged.",
+    "Apply ONLY the following adjustment requested by the user, and change nothing else:",
+    `"${instruction.trim()}"`,
+    "Keep absolutely everything else identical to the provided image: the same room, layout, furniture, objects, materials, colours, textures, lighting, camera angle, perspective, composition and framing.",
+    "Do not re-imagine, re-stage or regenerate the scene. Make the smallest possible edit that satisfies the request, and preserve maximum consistency with the original so it clearly looks like the exact same photo with only that single change applied.",
+    "If the request is ambiguous, stay conservative and keep the original look.",
+    REALISM,
+    "Output the single edited photo.",
+  ].join(" ");
+}
+
 const SERVICE_DESCRIPTION: Record<GenerationParams["service"], string> = {
   staging:
     "virtual staging — de ruimte werd digitaal gerenoveerd en opnieuw ingericht, met behoud van exact dezelfde camerahoek",

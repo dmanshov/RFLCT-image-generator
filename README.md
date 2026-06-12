@@ -20,6 +20,12 @@ die **goedkeurt**, worden de "na"-foto en caption gegenereerd — zo verspil je 
 Gemini-credits aan een "voor"-foto die je toch niet wil. Ben je niet tevreden,
 klik dan op *Nieuwe "voor"-foto*.
 
+Onder elk gegenereerd beeld kan je **fine-tunen**: typ een korte instructie (bv.
+"maak het wat lichter" of "verwijder de stoel links") en Gemini vertrekt van dát
+beeld en past *enkel* dat aan, met behoud van al de rest. De consistentie-regels
+zitten in de back-endprompt, dus je hoeft zelf geen volledige prompt te schrijven.
+Fine-tunen kan herhaald worden (elk resultaat wordt de nieuwe basis).
+
 > Het machine-uitvoerformaat van de caption (strikte JSON) wordt altijd door de
 > app afgedwongen, los van je eigen caption-prompt. Je kan de caption-prompt dus
 > vrij aanpassen zonder de verwerking te breken.
