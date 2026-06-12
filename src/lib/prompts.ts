@@ -90,11 +90,16 @@ Schrijf een korte maar krachtige Instagram-caption in het Nederlands die:
 - de diensten van RFLCT in de verf zet en eindigt met een subtiele call-to-action;
 - vlot en menselijk klinkt, niet als reclame-jargon; max ~3 korte zinnen + 1 regel met 4 tot 7 relevante hashtags.
 
-Geef daarnaast een korte 'toelichting' (2-3 zinnen, voor de maker zelf) die uitlegt wat er fotografisch verbeterd is tussen voor en na.
-
-Antwoord UITSLUITEND met geldige JSON in exact dit formaat, zonder extra tekst of markdown:
-{"caption": "<de caption met regeleindes als \\n>", "toelichting": "<de toelichting>"}`,
+Geef daarnaast een korte 'toelichting' (2-3 zinnen, voor de maker zelf) die uitlegt wat er fotografisch verbeterd is tussen voor en na.`,
 };
+
+// Het machine-uitvoerformaat wordt ALTIJD door de app toegevoegd, los van het
+// (bewerkbare) caption-sjabloon hierboven. Zo kan een eigen prompt het
+// verwachte JSON-formaat nooit breken.
+const CAPTION_OUTPUT_FORMAT = `
+
+Antwoord UITSLUITEND met geldige JSON in exact dit formaat, zonder extra tekst, uitleg of markdown-codeblokken:
+{"caption": "<de caption met regeleindes als \\n>", "toelichting": "<de toelichting>"}`;
 
 /** Vult placeholders in een sjabloon in en ruimt overtollige witruimte op. */
 function applyVars(template: string, vars: Record<string, string>): string {
@@ -132,11 +137,13 @@ export function renderCaptionPrompt(
   params: GenerationParams,
   brandContext: string
 ): string {
-  return applyVars(template, {
+  const rendered = applyVars(template, {
     brandContext: brandContext.trim(),
     roomType: params.roomType,
     service: SERVICE_DESCRIPTION[params.service] ?? params.service,
   });
+  // Forceer het machine-formaat, ongeacht wat de gebruiker in het sjabloon zette.
+  return rendered + CAPTION_OUTPUT_FORMAT;
 }
 
 export const DEFAULT_BRAND_CONTEXT =

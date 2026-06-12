@@ -230,7 +230,9 @@ export default function Page() {
     [params, brandContext, prompts]
   );
 
-  const generateAll = async () => {
+  // Fase 1: enkel de "voor"-foto genereren. De "na"-foto (en caption) volgen
+  // pas na expliciete goedkeuring, om Gemini-credits te besparen.
+  const generateBefore = async () => {
     setError(null);
     setBeforeImg(null);
     setAfterImg(null);
@@ -238,25 +240,25 @@ export default function Page() {
     setToelichting("");
     setStage({ before: "idle", after: "idle", caption: "idle" });
     try {
-      const before = await runBefore();
-      const after = await runAfter(before);
-      await runCaption(before, after);
+      await runBefore();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  // Fase 2: na goedkeuring van de "voor"-foto → "na"-foto + caption.
+  const approveAndContinue = async () => {
+    if (!beforeImg) return;
+    setError(null);
+    try {
+      const after = await runAfter(beforeImg);
+      await runCaption(beforeImg, after);
     } catch (e) {
       setError((e as Error).message);
     }
   };
 
   // Losse hergeneratie-acties.
-  const regenBefore = async () => {
-    setError(null);
-    try {
-      const before = await runBefore();
-      const after = await runAfter(before);
-      await runCaption(before, after);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
   const regenAfter = async () => {
     if (!beforeImg) return;
     setError(null);
@@ -293,6 +295,10 @@ export default function Page() {
     (mode === "params" ||
       (mode === "url" && url.trim().length > 0) ||
       (mode === "upload" && Boolean(uploadDataUrl)));
+
+  // De "voor"-foto staat klaar en wacht op goedkeuring vóór de "na"-stap.
+  const awaitingApproval =
+    Boolean(beforeImg) && stage.before === "done" && stage.after === "idle";
 
   const copyCaption = async () => {
     try {
@@ -532,9 +538,13 @@ export default function Page() {
             </div>
           </div>
 
-          <button className="btn-accent mt-5 w-full" onClick={generateAll} disabled={!canGenerate}>
-            {running ? "Bezig…" : "✨ Genereer voor/na + caption"}
+          <button className="btn-accent mt-5 w-full" onClick={generateBefore} disabled={!canGenerate}>
+            {stage.before === "busy" ? "Bezig…" : "✨ Genereer 'voor'-foto"}
           </button>
+          <p className="mt-2 text-center text-[11px] text-brand-400">
+            Stap 1 verbruikt 1 beeld-credit. De "na"-foto genereer je pas na jouw
+            goedkeuring.
+          </p>
 
           <ProgressList stage={stage} />
         </section>
@@ -545,6 +555,23 @@ export default function Page() {
             <div className="card border-red-300 bg-red-50 p-4 text-sm text-red-700">{error}</div>
           )}
 
+          {awaitingApproval && (
+            <div className="card border-accent-400 bg-amber-50 p-4">
+              <p className="text-sm font-medium text-brand-800">
+                Tevreden met de "voor"-foto? Keur ze goed om de "na"-foto + caption te
+                genereren. Dit verbruikt extra Gemini-credits.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button className="btn-accent" onClick={approveAndContinue} disabled={running}>
+                  ✓ Goedkeuren → genereer "na" + caption
+                </button>
+                <button className="btn-ghost" onClick={generateBefore} disabled={running}>
+                  ↻ Nieuwe "voor"-foto
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-6 md:grid-cols-2">
             <ResultCard
               title="Voor"
@@ -552,7 +579,7 @@ export default function Page() {
               image={beforeImg}
               busy={stage.before === "busy"}
               filenameBase="rflct-voor"
-              onRegen={regenBefore}
+              onRegen={generateBefore}
               regenLabel="Nieuwe 'voor'"
               regenDisabled={running || !canGenerate}
             />

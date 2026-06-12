@@ -15,6 +15,15 @@ automatiseert. In één doorloop:
 Je downloadt beide beelden en kopieert de caption naar het klembord. De "na"-foto
 is bedoeld als eerste beeld in je carrousel.
 
+De flow is **gefaseerd**: stap 1 genereert enkel de "voor"-foto. Pas wanneer je
+die **goedkeurt**, worden de "na"-foto en caption gegenereerd — zo verspil je geen
+Gemini-credits aan een "voor"-foto die je toch niet wil. Ben je niet tevreden,
+klik dan op *Nieuwe "voor"-foto*.
+
+> Het machine-uitvoerformaat van de caption (strikte JSON) wordt altijd door de
+> app afgedwongen, los van je eigen caption-prompt. Je kan de caption-prompt dus
+> vrij aanpassen zonder de verwerking te breken.
+
 > ⚠️ Controleer elk beeld op realisme vóór je post — de prompts sturen sterk aan
 > op fotorealisme, maar AI blijft AI.
 

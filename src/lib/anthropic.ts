@@ -88,23 +88,54 @@ function imageBlock(img: ImagePayload) {
 }
 
 function parseCaption(text: string): CaptionResult {
-  // Claude is gevraagd om JSON; haal het JSON-blok eruit, ook als er per
-  // ongeluk wat tekst of code-fences omheen staan.
-  const jsonMatch = /\{[\s\S]*\}/.exec(text);
-  if (jsonMatch) {
+  // Verwijder eventuele markdown code-fences (```json ... ```).
+  const cleaned = text.replace(/```(?:json)?/gi, "").trim();
+
+  // Probeer elk gebalanceerd JSON-object (van { tot bijhorende }) te parsen,
+  // van het langste naar het kortste, en neem het eerste dat een caption bevat.
+  for (const candidate of balancedJsonObjects(cleaned)) {
     try {
-      const parsed = JSON.parse(jsonMatch[0]) as Partial<CaptionResult>;
-      if (parsed.caption) {
+      const parsed = JSON.parse(candidate) as Partial<CaptionResult>;
+      if (parsed && typeof parsed.caption === "string" && parsed.caption.trim()) {
         return {
-          caption: String(parsed.caption),
-          toelichting: String(parsed.toelichting ?? ""),
+          caption: parsed.caption,
+          toelichting: typeof parsed.toelichting === "string" ? parsed.toelichting : "",
         };
       }
     } catch {
-      // val terug op ruwe tekst
+      // probeer de volgende kandidaat
     }
   }
-  return { caption: text, toelichting: "" };
+  // Geen bruikbare JSON gevonden: gebruik de (opgeschoonde) tekst als caption.
+  return { caption: cleaned, toelichting: "" };
+}
+
+/** Geeft alle gebalanceerde {…}-objecten in de tekst terug, langste eerst. */
+function balancedJsonObjects(text: string): string[] {
+  const results: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+      } else if (ch === '"') inString = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          results.push(text.slice(i, j + 1));
+          break;
+        }
+      }
+    }
+  }
+  return results.sort((a, b) => b.length - a.length);
 }
 
 interface AnthropicResponse {
