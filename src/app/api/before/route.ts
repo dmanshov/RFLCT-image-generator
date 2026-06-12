@@ -34,11 +34,10 @@ export async function POST(req: NextRequest) {
       reference = fromDataUrl(body.uploadDataUrl);
     }
 
-    const template =
-      body.promptTemplate?.trim() ||
-      (reference ? DEFAULT_PROMPTS.beforeReference : DEFAULT_PROMPTS.beforeParams);
+    const key = reference ? "beforeReference" : "beforeParams";
+    const template = body.promptTemplate?.trim() || DEFAULT_PROMPTS[key];
     const image = await geminiGenerateImage({
-      prompt: renderImagePrompt(template, params),
+      prompt: renderImagePrompt(template, params, key),
       images: reference ? [reference] : undefined,
     });
 

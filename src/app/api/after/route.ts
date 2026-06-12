@@ -23,11 +23,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Geen 'voor'-foto meegegeven." }, { status: 400 });
     }
     const before = fromDataUrl(body.beforeDataUrl);
-    const fallback =
-      body.params.service === "staging" ? DEFAULT_PROMPTS.afterStaging : DEFAULT_PROMPTS.afterRetouch;
-    const template = body.promptTemplate?.trim() || fallback;
+    const key = body.params.service === "staging" ? "afterStaging" : "afterRetouch";
+    const template = body.promptTemplate?.trim() || DEFAULT_PROMPTS[key];
     const image = await geminiGenerateImage({
-      prompt: renderImagePrompt(template, body.params),
+      prompt: renderImagePrompt(template, body.params, key),
       images: [before],
     });
     return NextResponse.json({ image: toDataUrl(image) });

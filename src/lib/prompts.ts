@@ -31,34 +31,29 @@ export type PromptKey =
   | "caption";
 export type PromptSet = Record<PromptKey, string>;
 
-// Standaard prompt-sjablonen. De gebruiker kan ze in de instellingen overschrijven.
-// Placeholders tussen accolades worden bij het genereren ingevuld:
-//   {roomType} {propertyType} {style} {lighting} {aspect} {framing} {extra}
-//   (caption) {brandContext} {roomType} {service}
-// {extra} wordt automatisch een zin met je extra wensen, of leeg als je niets invult.
+// Standaard prompt-sjablonen. De gebruiker kan ze in de instellingen overschrijven
+// met VRIJE TEKST — geen placeholders of accolades nodig. De relevante parameters
+// (ruimte, stijl, licht, beeldverhouding, dienst, merk-context, extra wensen)
+// worden bij het genereren automatisch als een contextblok onderaan toegevoegd.
 export const DEFAULT_PROMPTS: PromptSet = {
   beforeReference: `You are recreating the room from the reference photo as an ORIGINAL, copyright-free image.
 Recreate it AS FAITHFULLY AS POSSIBLE so it is immediately recognizable as the same room: keep the same room type and layout, the same camera viewpoint, angle and framing, the same furniture in the same positions, the same wall and floor colours and materials, the same windows, doors, proportions and the same overall lighting and mood. The result should look almost like the same photo.
 To avoid copyright issues, change ONLY minor, incidental and replaceable details — e.g. the exact artwork on the walls, the specific decorative objects, books, plants, cushions, patterns and small props. Never change the layout, the furniture placement, the architecture or the camera angle.
 Keep the same amateur, low-quality real-estate-listing look as the reference: flat phone-camera lighting, an ordinary or slightly awkward camera angle, a slightly cluttered and lived-in space, somewhat dated styling.
-{extra}
 ${REALISM}
 Output a single photo that closely matches the reference's composition and framing.`,
 
-  beforeParams: `Generate an authentic but amateur, low-quality real estate listing photo of a {style} {roomType} in a {propertyType}.
+  beforeParams: `Generate an authentic but amateur, low-quality real estate listing photo of the room described in the context below.
 It must look like a quick, unprofessional phone snapshot from a mediocre Belgian real-estate ad (Immoweb/Zimmo): flat and uneven lighting, an ordinary or slightly awkward angle, a bit cluttered and lived-in, slightly dated decor, nothing styled or staged.
 This is the 'before' image, so it should look ordinary and unremarkable — NOT polished.
-{extra}
 ${REALISM}
-Output a single photo with {framing}.`,
+Output a single photo in the requested framing.`,
 
   afterStaging: `The provided image is a 'BEFORE' photo of a room (often dated, empty or unappealing). You are a professional virtual staging and renovation artist.
 Produce the 'AFTER': a render of the SAME room, viewed from the EXACT SAME camera position, that has been significantly renovated and beautifully restyled.
 ABSOLUTELY KEEP THE COMPOSITION IDENTICAL: the same camera angle, viewpoint, focal length, perspective and framing, and the same architectural shell — the same room dimensions and the same windows, doors and openings in exactly the same positions and sizes. The before and after must line up perfectly when overlaid; do NOT move, rotate or re-crop the camera.
 You MAY fully renovate and restyle the interior: replace and add furniture, update the flooring, the wall finishes and paint, the light fixtures, and add tasteful decor and styling, so the space looks freshly renovated, high-end and move-in ready.
 Make the transformation rich and impressive, like a premium interior makeover, while staying realistic for this type of property.
-Lighting mood: {lighting}.
-{extra}
 ${REALISM}
 Keep the original composition and framing of the before photo exactly.`,
 
@@ -72,18 +67,12 @@ What you MAY do — everything a top photographer does on the shoot day:
 - Composition: you may change the camera angle and framing for a stronger, well-balanced shot with perfectly straight vertical and horizontal lines.
 - Finish: crisp professional color grading, rich but natural colours, a warm inviting yet realistic ambiance.
 The improvement must be DRAMATIC and immediately obvious versus the before, purely through cleanup, lighting, composition and grading — never by adding or changing objects. Do NOT return the before image unchanged.
-Lighting mood: {lighting}.
-{extra}
 ${REALISM}
-Output a single photo with {framing}.`,
+Output a single photo in the requested framing.`,
 
   caption: `Je bent social-media copywriter voor RFLCT (www.rflct.be).
-Context over RFLCT:
-{brandContext}
 
 Bij dit bericht horen twee beelden: het EERSTE beeld is de 'voor'-foto (een matige vastgoedfoto), het TWEEDE beeld is de professionele 'na'-foto van diezelfde ruimte.
-Het gaat om een {roomType}.
-De getoonde dienst is: {service}. Stem de caption en de uitgelichte meerwaarde hierop af.
 
 Schrijf een korte maar krachtige Instagram-caption in het Nederlands die:
 - het voor/na-effect benadrukt en de meerwaarde van sterke vastgoedbeelden;
@@ -101,27 +90,53 @@ const CAPTION_OUTPUT_FORMAT = `
 Antwoord UITSLUITEND met geldige JSON in exact dit formaat, zonder extra tekst, uitleg of markdown-codeblokken:
 {"caption": "<de caption met regeleindes als \\n>", "toelichting": "<de toelichting>"}`;
 
-/** Vult placeholders in een sjabloon in en ruimt overtollige witruimte op. */
-function applyVars(template: string, vars: Record<string, string>): string {
-  return template
-    .replace(/\{([a-zA-Z]\w*)\}/g, (match, key: string) => (key in vars ? vars[key] : match))
+/** Maakt één contextregel, of "" als er geen waarde is. */
+function line(label: string, value?: string): string {
+  return value && value.trim() ? `- ${label}: ${value.trim()}` : "";
+}
+
+/** Bouwt het automatische contextblok voor een beeld-prompt. */
+function imageContext(key: PromptKey, params: GenerationParams): string {
+  const lines: string[] = [];
+  if (key === "beforeParams") {
+    lines.push(line("Room", params.roomType));
+    lines.push(line("Property type", params.propertyType));
+    lines.push(line("Style", params.style));
+    lines.push(line("Desired framing", framing(params.aspect)));
+  } else if (key === "beforeReference") {
+    lines.push("- Match the composition and framing of the provided reference photo.");
+  } else if (key === "afterStaging") {
+    // Compositie blijft identiek aan de voor-foto: geen nieuwe framing opleggen.
+    lines.push(line("Lighting mood", params.lighting));
+  } else if (key === "afterRetouch") {
+    lines.push(line("Lighting mood", params.lighting));
+    lines.push(line("Desired framing", framing(params.aspect)));
+  }
+  lines.push(line("Extra request to respect", params.extra));
+
+  const body = lines.filter(Boolean).join("\n");
+  return body ? `\n\nAdditional context (provided automatically — follow it):\n${body}` : "";
+}
+
+/** Verwijdert overtollige witruimte en lege regels. */
+function tidy(text: string): string {
+  return text
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-/** Rendert een beeld-prompt (voor/na) met de gekozen parameters. */
-export function renderImagePrompt(template: string, params: GenerationParams): string {
-  const extra = params.extra && params.extra.trim();
-  return applyVars(template, {
-    roomType: params.roomType,
-    propertyType: params.propertyType,
-    style: params.style,
-    lighting: params.lighting,
-    aspect: params.aspect,
-    framing: framing(params.aspect),
-    extra: extra ? `Also respect this extra request: ${extra}.` : "",
-  });
+/**
+ * Rendert een beeld-prompt (voor/na). Het sjabloon is vrije tekst; de parameters
+ * worden als contextblok onderaan toegevoegd. Voor backward-compatibiliteit met
+ * oudere sjablonen worden eventuele resterende placeholders nog leeggemaakt.
+ */
+export function renderImagePrompt(
+  template: string,
+  params: GenerationParams,
+  key: PromptKey
+): string {
+  return tidy(stripLegacyPlaceholders(template)) + imageContext(key, params);
 }
 
 const SERVICE_DESCRIPTION: Record<GenerationParams["service"], string> = {
@@ -131,19 +146,32 @@ const SERVICE_DESCRIPTION: Record<GenerationParams["service"], string> = {
     "fotoretouche — exact dezelfde ruimte, maar professioneel opgeruimd, herschikt, belicht en gefotografeerd (geen nieuwe elementen toegevoegd)",
 };
 
-/** Rendert de caption-prompt met de merk-context en parameters. */
+/**
+ * Verwijdert oude {placeholder}-tokens uit eerder opgeslagen sjablonen, zodat er
+ * nooit accolades in de uiteindelijke prompt terechtkomen. Vrije tekst zonder
+ * accolades blijft volledig ongewijzigd.
+ */
+function stripLegacyPlaceholders(template: string): string {
+  const known =
+    /\{(roomType|propertyType|style|lighting|aspect|framing|extra|brandContext|service)\}/g;
+  return template.replace(known, "");
+}
+
+/** Rendert de caption-prompt: vrije tekst + automatisch contextblok + JSON-formaat. */
 export function renderCaptionPrompt(
   template: string,
   params: GenerationParams,
   brandContext: string
 ): string {
-  const rendered = applyVars(template, {
-    brandContext: brandContext.trim(),
-    roomType: params.roomType,
-    service: SERVICE_DESCRIPTION[params.service] ?? params.service,
-  });
-  // Forceer het machine-formaat, ongeacht wat de gebruiker in het sjabloon zette.
-  return rendered + CAPTION_OUTPUT_FORMAT;
+  const context = [
+    line("Over RFLCT", brandContext),
+    line("Ruimte", params.roomType),
+    line("Uitgelichte dienst", SERVICE_DESCRIPTION[params.service] ?? params.service),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const contextBlock = context ? `\n\nContext (automatisch toegevoegd):\n${context}` : "";
+  return tidy(stripLegacyPlaceholders(template)) + contextBlock + CAPTION_OUTPUT_FORMAT;
 }
 
 export const DEFAULT_BRAND_CONTEXT =

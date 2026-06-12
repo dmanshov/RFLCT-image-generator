@@ -28,11 +28,11 @@ const DEFAULT_PARAMS: GenerationParams = {
 
 // Welke prompt-sjablonen in de instellingen bewerkbaar zijn.
 const PROMPT_FIELDS: { key: PromptKey; label: string; hint: string }[] = [
-  { key: "beforeParams", label: "Voor-foto · uit parameters", hint: "{style} {roomType} {propertyType} {lighting} {framing} {extra}" },
-  { key: "beforeReference", label: "Voor-foto · uit referentie (URL/upload)", hint: "{extra}" },
-  { key: "afterStaging", label: "Na-foto · virtual staging (renovatie)", hint: "{lighting} {extra}" },
-  { key: "afterRetouch", label: "Na-foto · fotoretouche", hint: "{lighting} {framing} {extra}" },
-  { key: "caption", label: "Caption · Claude", hint: "{brandContext} {roomType} {service}" },
+  { key: "beforeParams", label: "Voor-foto · uit parameters", hint: "Ruimte, vastgoedtype, stijl, beeldverhouding en extra wensen worden automatisch toegevoegd." },
+  { key: "beforeReference", label: "Voor-foto · uit referentie (URL/upload)", hint: "De referentiefoto en je extra wensen worden automatisch meegegeven." },
+  { key: "afterStaging", label: "Na-foto · virtual staging (renovatie)", hint: "Licht/sfeer en extra wensen worden automatisch toegevoegd." },
+  { key: "afterRetouch", label: "Na-foto · fotoretouche", hint: "Licht/sfeer, beeldverhouding en extra wensen worden automatisch toegevoegd." },
+  { key: "caption", label: "Caption · Claude", hint: "Merk-context, ruimte en dienst worden automatisch toegevoegd; het JSON-formaat dwingt de app af." },
 ];
 
 interface ApiError {
@@ -377,9 +377,10 @@ export default function Page() {
             {showPrompts && (
               <div className="mt-3 space-y-5">
                 <p className="text-xs text-brand-400">
-                  Pas de instructies aan die naar de AI gestuurd worden. Gebruik de placeholders
-                  tussen accolades — die worden automatisch ingevuld. <code>{"{extra}"}</code> wordt
-                  jouw "extra wensen" (of leeg). Wijzigingen worden mee opgeslagen in de database.
+                  Schrijf je prompts als vrije tekst — géén placeholders of accolades nodig. De
+                  relevante parameters (ruimte, stijl, licht, beeldverhouding, dienst, merk-context
+                  en je extra wensen) worden automatisch onderaan de prompt toegevoegd. Wijzigingen
+                  worden mee opgeslagen in de database.
                 </p>
                 {PROMPT_FIELDS.map((f) => (
                   <div key={f.key}>
@@ -397,9 +398,7 @@ export default function Page() {
                       value={prompts[f.key]}
                       onChange={(e) => setPrompts((p) => ({ ...p, [f.key]: e.target.value }))}
                     />
-                    <p className="mt-1 text-[11px] text-brand-400">
-                      Placeholders: <code>{f.hint}</code>
-                    </p>
+                    <p className="mt-1 text-[11px] text-brand-400">{f.hint}</p>
                   </div>
                 ))}
                 <button

@@ -78,10 +78,11 @@ knop **🎲 Verras me** zet willekeurige waarden. De keuzelijsten staan in
 
 Via **⚙︎ Instellingen** pas je de RFLCT-merkcontext/toon aan die aan Claude wordt
 meegegeven, én — onder *Prompts aanpassen (geavanceerd)* — de volledige
-AI-instructies (sjablonen) voor elke stap. Gebruik placeholders tussen accolades
-(bv. `{roomType}`, `{lighting}`, `{framing}`, `{extra}`, `{brandContext}`,
-`{service}`); die worden automatisch ingevuld. Elke prompt heeft een
-*Herstel*-knop. Ook deze prompts worden in de database bewaard.
+AI-instructies voor elke stap. Schrijf ze als **vrije tekst**: geen placeholders
+of accolades nodig. De relevante parameters (ruimte, vastgoedtype, stijl,
+licht/sfeer, beeldverhouding, dienst, merk-context en je extra wensen) worden bij
+het genereren automatisch als een contextblok onderaan de prompt toegevoegd. Elke
+prompt heeft een *Herstel*-knop en wordt in de database bewaard.
 
 ### Twee diensten (bepaalt de "na"-foto)
 
