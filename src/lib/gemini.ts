@@ -39,24 +39,45 @@ export interface GenerateImageOptions {
   images?: ImagePayload[];
   /** Gewenste beeldverhouding, bv "4:5". Weggelaten => model behoudt input-ratio. */
   aspectRatio?: string;
-  /** Of de prompt eerst verrijkt wordt door het tekstmodel. Default: true. */
-  rewrite?: boolean;
+  /**
+   * Rewrite-stap vóór de generatie:
+   * - "image" (default): verrijk tot een rijke beeldprompt.
+   * - "finetune": maak de gevraagde wijzigingen expliciet/volledig, met behoud
+   *   van consistentie (geen extra wijzigingen).
+   * - false: geen rewrite.
+   */
+  rewrite?: false | "image" | "finetune";
 }
 
-/**
- * Stap 1 (rewrite): verrijkt de ruwe service-prompt tot een gedetailleerde
- * beeldprompt via het tekstmodel. Behoudt expliciet alle harde regels. Faalt de
- * stap, dan vallen we terug op de ruwe prompt (generatie mag niet breken).
- */
-export async function expandPrompt(rawPrompt: string): Promise<string> {
-  const key = requireKey();
-  const instruction =
+type RewriteKind = "image" | "finetune";
+
+const REWRITE_PREAMBLE: Record<RewriteKind, string> = {
+  image:
     "Rewrite and enrich the following image-generation instruction into a single, vivid, " +
     "highly detailed prompt for a photorealistic real-estate image model. Add concrete " +
     "photographic and styling detail (lighting, lens, composition, materials, mood). " +
     "Keep EVERY hard rule and constraint exactly intact — do not loosen or remove any 'do not' " +
     "rule, and keep all locked/free boundaries and any automatically added context. " +
-    "Return ONLY the rewritten prompt, no preamble.\n\n" + rawPrompt;
+    "Return ONLY the rewritten prompt, no preamble.",
+  finetune:
+    "The following is an instruction to EDIT an existing image. Rewrite it into a single, clear " +
+    "and COMPLETE instruction that explicitly enumerates EVERY requested change as a concrete, " +
+    "unambiguous step, so an image-editing model applies ALL of them and misses none. " +
+    "Do NOT add, invent or imply any change that was not requested. " +
+    "Keep all consistency rules fully intact: everything that is not explicitly changed must stay " +
+    "exactly identical (same room, layout, furniture, objects, materials, colours, textures, " +
+    "lighting, camera angle, perspective and composition). " +
+    "Return ONLY the rewritten instruction, no preamble.",
+};
+
+/**
+ * Stap 1 (rewrite): verrijkt/verheldert de ruwe prompt via het tekstmodel.
+ * Behoudt expliciet alle harde regels. Faalt de stap, dan vallen we terug op de
+ * ruwe prompt (generatie mag niet breken).
+ */
+export async function expandPrompt(rawPrompt: string, kind: RewriteKind = "image"): Promise<string> {
+  const key = requireKey();
+  const instruction = REWRITE_PREAMBLE[kind] + "\n\n" + rawPrompt;
 
   try {
     const res = await fetch(
@@ -91,7 +112,8 @@ export async function expandPrompt(rawPrompt: string): Promise<string> {
  */
 export async function geminiGenerateImage(opts: GenerateImageOptions): Promise<ImagePayload> {
   requireKey();
-  const finalPrompt = opts.rewrite === false ? opts.prompt : await expandPrompt(opts.prompt);
+  const rewriteKind: RewriteKind | false = opts.rewrite === undefined ? "image" : opts.rewrite;
+  const finalPrompt = rewriteKind === false ? opts.prompt : await expandPrompt(opts.prompt, rewriteKind);
 
   const parts: unknown[] = [{ text: finalPrompt }];
   for (const img of opts.images ?? []) {
