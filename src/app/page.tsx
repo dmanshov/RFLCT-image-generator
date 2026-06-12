@@ -240,6 +240,8 @@ export default function Page() {
         (data?.error as string) ||
         (res.status === 413
           ? "De afbeelding was te groot voor de server (limiet ~4,5 MB). De beelden worden nu automatisch verkleind voor verzending; probeer opnieuw."
+          : res.status === 504
+          ? "De generatie duurde te lang en liep in een time-out (504). Dit gebeurt vooral bij virtual staging op hoge resolutie. Probeer opnieuw, of zet GEMINI_IMAGE_SIZE op 2K (of gebruik het flash-beeldmodel) in Vercel."
           : `Server gaf een fout (${res.status}).`);
       throw new Error(message);
     }

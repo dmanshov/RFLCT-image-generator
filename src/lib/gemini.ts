@@ -85,6 +85,9 @@ export async function expandPrompt(rawPrompt: string, kind: RewriteKind = "image
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: instruction }] }] }),
+        // Begrens de rewrite-stap zodat ze nooit het tijdsbudget van de generatie
+        // opeet; bij overschrijding vallen we terug op de ruwe prompt.
+        signal: AbortSignal.timeout(20000),
       }
     );
     if (!res.ok) {

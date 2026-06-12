@@ -6,7 +6,7 @@ import { fromDataUrl, toDataUrl } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 interface FineTuneBody {
   /** het reeds gegenereerde beeld als data-URL */
