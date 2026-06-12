@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     const image = await geminiGenerateImage({
       prompt: renderImagePrompt(template, params, key),
       images: reference ? [reference] : undefined,
+      aspectRatio: params.aspect,
     });
 
     return NextResponse.json({ image: toDataUrl(image) });

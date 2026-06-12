@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
     const image = await geminiGenerateImage({
       prompt: renderFineTunePrompt(body.instruction),
       images: [base],
+      // Geen rewrite: de strikte consistentie-instructie mag niet verrijkt/verwaterd
+      // worden. Geen aspectRatio: behoud exact de afmetingen van het bronbeeld.
+      rewrite: false,
     });
     return NextResponse.json({ image: toDataUrl(image) });
   } catch (err) {

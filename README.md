@@ -56,9 +56,35 @@ npm run dev
 | `ANTHROPIC_API_KEY`  | Caption + toelichting   | <https://console.anthropic.com/settings/keys> |
 | `APP_PASSWORD`       | Login (alleen jij)      | kies zelf een sterk wachtwoord |
 
-Optioneel kan je het beeldmodel (`GEMINI_IMAGE_MODEL`, standaard
-`gemini-2.5-flash-image`) en het caption-model (`ANTHROPIC_MODEL`, standaard
-`claude-sonnet-4-6`) overschrijven.
+### Beeldgeneratie-pipeline (twee stappen)
+
+Om API-resultaten het niveau van de Gemini-app te laten benaderen, verloopt elke
+beeldgeneratie in twee stappen:
+
+1. **Prompt-rewrite** — de ruwe service-prompt gaat eerst door een tekstmodel
+   (`GEMINI_TEXT_MODEL`, default `gemini-2.5-flash`) dat er een rijke,
+   gedetailleerde beeldprompt van maakt, met behoud van álle harde regels.
+2. **Beeldgeneratie** — de verrijkte prompt (plus het input-beeld bij
+   image-to-image) gaat naar het beeldmodel met expliciete `aspectRatio` en
+   `imageSize` in de generation-config.
+
+Configureerbaar via env-vars (niet hardcoded):
+
+| Variabele | Rol | Default |
+| --- | --- | --- |
+| `GEMINI_IMAGE_MODEL` | Beeldmodel | `gemini-3.1-flash-image-preview` |
+| `GEMINI_IMAGE_MODEL_FALLBACK` | Fallback als het hoofdmodel ontbreekt | `gemini-2.5-flash-image` |
+| `GEMINI_TEXT_MODEL` | Tekstmodel voor de rewrite-stap | `gemini-2.5-flash` |
+| `GEMINI_IMAGE_SIZE` | Resolutie (`1K`/`2K`/`4K`) | `2K` |
+| `ANTHROPIC_MODEL` | Caption-model | `claude-sonnet-4-6` |
+
+De fine-tune-stap slaat de rewrite over (de strikte consistentie-instructie mag
+niet verwaterd worden). Het effectieve beeldmodel wordt per call gelogd (zichtbaar
+in de Vercel-functielogs), zodat je kan verifiëren welk model écht draaide.
+
+> Beeldmodellen evolueren snel. Staat er bij Vercel nog een oude
+> `GEMINI_IMAGE_MODEL` (bv. `gemini-2.5-flash-image`) ingesteld, verwijder of
+> update die env-var, anders blijft het oude model draaien.
 
 De app toont bovenaan een waarschuwing zolang een sleutel ontbreekt, en geeft
 duidelijke foutmeldingen bij ongeldige sleutels of geblokkeerde generaties.
