@@ -1,4 +1,4 @@
-export type InputMode = "url" | "upload" | "params";
+export type InputMode = "url" | "upload" | "params" | "direct";
 
 /**
  * Welke RFLCT-dienst de "na"-foto uitlicht:

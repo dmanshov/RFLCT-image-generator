@@ -3,9 +3,13 @@
 Een web-app die de content-workflow voor de [RFLCT](https://www.rflct.be)-socials
 automatiseert. In één doorloop:
 
-1. **Voor-foto** — Google Gemini genereert een matige, *copyright-veilige*
-   vastgoedfoto. Je vertrekt van een **URL**, een **geüploade** advertentiefoto,
-   of volledig uit **parameters**.
+1. **Voor-foto** — vier vertrekpunten:
+   - **Parameters** — Gemini genereert een matige, *copyright-veilige* vastgoedfoto.
+   - **Referentie-URL** / **Referentie-upload** — Gemini maakt een copyright-veilige
+     gelijkaardige ruimte na van een (advertentie)foto.
+   - **Eigen foto** — je uploadt een **échte klantenfoto** die rechtstreeks de
+     "voor" wordt en als basis dient voor de "na". Geen generatie, geen credit —
+     ideaal om echte panden te retoucheren of virtueel te stagen.
 2. **Na-foto** — Gemini herfotografeert *exact dezelfde ruimte* als een
    professionele vastgoedfotograaf: opruimen, betere hoek, professioneel licht,
    herschikking van de bestaande meubels — zonder nieuwe elementen toe te voegen.

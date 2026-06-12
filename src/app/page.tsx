@@ -333,6 +333,19 @@ export default function Page() {
     setCaption("");
     setToelichting("");
     setStage({ before: "idle", after: "idle", caption: "idle" });
+
+    // "Eigen foto": gebruik de geüploade foto rechtstreeks als "voor", zonder
+    // Gemini-generatie (geen credit). Ze dient meteen als basis voor de "na".
+    if (mode === "direct") {
+      if (!uploadDataUrl) {
+        setError("Upload eerst een foto.");
+        return;
+      }
+      setBeforeImg(uploadDataUrl);
+      setStage({ before: "done", after: "idle", caption: "idle" });
+      return;
+    }
+
     try {
       await runBefore();
     } catch (e) {
@@ -413,7 +426,7 @@ export default function Page() {
     !running &&
     (mode === "params" ||
       (mode === "url" && url.trim().length > 0) ||
-      (mode === "upload" && Boolean(uploadDataUrl)));
+      ((mode === "upload" || mode === "direct") && Boolean(uploadDataUrl)));
 
   // De "voor"-foto staat klaar en wacht op goedkeuring vóór de "na"-stap.
   const awaitingApproval =
@@ -557,12 +570,13 @@ export default function Page() {
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-500">
             1 · Vertrekpunt
           </h2>
-          <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-brand-100 p-1">
+          <div className="mb-4 grid grid-cols-2 gap-1 rounded-lg bg-brand-100 p-1">
             {(
               [
                 ["params", "Parameters"],
-                ["url", "URL"],
-                ["upload", "Upload"],
+                ["url", "Referentie-URL"],
+                ["upload", "Referentie-upload"],
+                ["direct", "Eigen foto"],
               ] as [InputMode, string][]
             ).map(([m, label]) => (
               <button
@@ -593,9 +607,11 @@ export default function Page() {
             </div>
           )}
 
-          {mode === "upload" && (
+          {(mode === "upload" || mode === "direct") && (
             <div className="mb-4">
-              <label className="field-label">Referentiefoto uploaden</label>
+              <label className="field-label">
+                {mode === "direct" ? "Eigen foto uploaden (wordt de 'voor')" : "Referentiefoto uploaden"}
+              </label>
               <input
                 type="file"
                 accept="image/*"
@@ -605,10 +621,15 @@ export default function Page() {
               {uploadDataUrl && (
                 <div className="mt-2 flex items-center gap-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={uploadDataUrl} alt="referentie" className="h-14 w-14 rounded object-cover" />
+                  <img src={uploadDataUrl} alt="upload" className="h-14 w-14 rounded object-cover" />
                   <span className="text-xs text-brand-500">{uploadName}</span>
                 </div>
               )}
+              <p className="mt-1 text-xs text-brand-400">
+                {mode === "direct"
+                  ? "Je eigen foto wordt rechtstreeks de 'voor'-foto en de basis voor de 'na'. Er wordt geen namaakfoto gegenereerd (geen credit). Ideaal voor échte klantenfoto's."
+                  : "Er wordt een originele, copyright-veilige gelijkaardige ruimte van gegenereerd als 'voor'-foto."}
+              </p>
             </div>
           )}
 
@@ -676,11 +697,16 @@ export default function Page() {
           </div>
 
           <button className="btn-accent mt-5 w-full" onClick={generateBefore} disabled={!canGenerate}>
-            {stage.before === "busy" ? "Bezig…" : "✨ Genereer 'voor'-foto"}
+            {stage.before === "busy"
+              ? "Bezig…"
+              : mode === "direct"
+              ? "📷 Gebruik foto als 'voor'"
+              : "✨ Genereer 'voor'-foto"}
           </button>
           <p className="mt-2 text-center text-[11px] text-brand-400">
-            Stap 1 verbruikt 1 beeld-credit. De "na"-foto genereer je pas na jouw
-            goedkeuring.
+            {mode === "direct"
+              ? "Stap 1 verbruikt geen credit (je eigen foto). De \"na\"-foto genereer je na goedkeuring."
+              : "Stap 1 verbruikt 1 beeld-credit. De \"na\"-foto genereer je pas na jouw goedkeuring."}
           </p>
 
           <ProgressList stage={stage} />
@@ -712,12 +738,12 @@ export default function Page() {
           <div className="grid gap-6 md:grid-cols-2">
             <ResultCard
               title="Voor"
-              badge="Matige advertentiefoto"
+              badge={mode === "direct" ? "Jouw foto" : "Matige advertentiefoto"}
               image={beforeImg}
               busy={stage.before === "busy"}
               filenameBase="rflct-voor"
               onRegen={generateBefore}
-              regenLabel="Nieuwe 'voor'"
+              regenLabel={mode === "direct" ? "Opnieuw" : "Nieuwe 'voor'"}
               regenDisabled={running || !canGenerate}
               onFineTune={(instr) => fineTune("before", instr)}
               fineTuneDisabled={running}
