@@ -10,7 +10,14 @@ import {
   STYLES,
   randomParams,
 } from "@/lib/options";
-import { DEFAULT_BRAND_CONTEXT, DEFAULT_PROMPTS, type PromptKey, type PromptSet } from "@/lib/prompts";
+import {
+  DEFAULT_BRAND_CONTEXT,
+  DEFAULT_PROMPTS,
+  renderCaptionPrompt,
+  renderImagePrompt,
+  type PromptKey,
+  type PromptSet,
+} from "@/lib/prompts";
 import type { GenerationParams, InputMode } from "@/lib/types";
 
 type Stage = "before" | "after" | "caption";
@@ -78,6 +85,7 @@ export default function Page() {
   const [prompts, setPrompts] = useState<PromptSet>(DEFAULT_PROMPTS);
   const [showSettings, setShowSettings] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
+  const [previewKey, setPreviewKey] = useState<PromptKey | null>(null);
 
   const [beforeImg, setBeforeImg] = useState<string | null>(null);
   const [afterImg, setAfterImg] = useState<string | null>(null);
@@ -98,6 +106,7 @@ export default function Page() {
   // Pas met opslaan beginnen nadat de instellingen (DB of cache) geladen zijn,
   // zodat we de net geladen waarden niet meteen terugschrijven.
   const ready = useRef(false);
+  const dirty = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // ── instellingen laden: eerst lokale cache, dan autoritatief uit de DB ─────
@@ -123,6 +132,8 @@ export default function Page() {
     fetch("/api/settings")
       .then((r) => r.json())
       .then((d) => {
+        // Niet overschrijven als de gebruiker ondertussen al iets heeft aangepast.
+        if (dirty.current) return;
         if (d?.persisted && d.settings) {
           if (typeof d.settings.brandContext === "string") setBrandContext(d.settings.brandContext);
           if (d.settings.params) setParams((p) => ({ ...DEFAULT_PARAMS, ...p, ...d.settings.params }));
@@ -167,8 +178,31 @@ export default function Page() {
   }, [params, brandContext, mode, prompts]);
 
   // ── helpers ───────────────────────────────────────────────────────────────
-  const setParam = <K extends keyof GenerationParams>(k: K, v: GenerationParams[K]) =>
+  // Markeer dat de gebruiker zelf iets wijzigde, zodat een laattijdig
+  // DB-antwoord die wijziging niet meer overschrijft.
+  const markDirty = () => {
+    dirty.current = true;
+  };
+
+  const setParam = <K extends keyof GenerationParams>(k: K, v: GenerationParams[K]) => {
+    markDirty();
     setParams((p) => ({ ...p, [k]: v }));
+  };
+
+  const updatePrompt = (key: PromptKey, value: string) => {
+    markDirty();
+    setPrompts((p) => ({ ...p, [key]: value }));
+  };
+
+  const updateBrandContext = (value: string) => {
+    markDirty();
+    setBrandContext(value);
+  };
+
+  const updateMode = (m: InputMode) => {
+    markDirty();
+    setMode(m);
+  };
 
   const onUpload = (file: File) => {
     const reader = new FileReader();
@@ -351,7 +385,10 @@ export default function Page() {
     }
   };
 
-  const surprise = () => setParams((p) => ({ ...p, ...randomParams() }));
+  const surprise = () => {
+    markDirty();
+    setParams((p) => ({ ...p, ...randomParams() }));
+  };
 
   const logout = async () => {
     try {
@@ -425,9 +462,9 @@ export default function Page() {
           <textarea
             className="field min-h-[120px]"
             value={brandContext}
-            onChange={(e) => setBrandContext(e.target.value)}
+            onChange={(e) => updateBrandContext(e.target.value)}
           />
-          <button className="btn-ghost mt-2" onClick={() => setBrandContext(DEFAULT_BRAND_CONTEXT)}>
+          <button className="btn-ghost mt-2" onClick={() => updateBrandContext(DEFAULT_BRAND_CONTEXT)}>
             Herstel standaardtekst
           </button>
           <p className="mt-2 text-xs text-brand-400">
@@ -452,7 +489,8 @@ export default function Page() {
                   Schrijf je prompts als vrije tekst — géén placeholders of accolades nodig. De
                   relevante parameters (ruimte, stijl, licht, beeldverhouding, dienst, merk-context
                   en je extra wensen) worden automatisch onderaan de prompt toegevoegd. Wijzigingen
-                  worden mee opgeslagen in de database.
+                  worden mee opgeslagen in de database. Klik op <em>Toon verstuurde prompt</em> om
+                  exact te zien wat naar de AI gaat.
                 </p>
                 {PROMPT_FIELDS.map((f) => (
                   <div key={f.key}>
@@ -460,7 +498,7 @@ export default function Page() {
                       <label className="field-label mb-0">{f.label}</label>
                       <button
                         className="btn-ghost px-2 py-0.5 text-[11px]"
-                        onClick={() => setPrompts((p) => ({ ...p, [f.key]: DEFAULT_PROMPTS[f.key] }))}
+                        onClick={() => updatePrompt(f.key, DEFAULT_PROMPTS[f.key])}
                       >
                         Herstel
                       </button>
@@ -468,14 +506,32 @@ export default function Page() {
                     <textarea
                       className="field min-h-[140px] font-mono text-xs leading-relaxed"
                       value={prompts[f.key]}
-                      onChange={(e) => setPrompts((p) => ({ ...p, [f.key]: e.target.value }))}
+                      onChange={(e) => updatePrompt(f.key, e.target.value)}
                     />
-                    <p className="mt-1 text-[11px] text-brand-400">{f.hint}</p>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-brand-400">{f.hint}</p>
+                      <button
+                        className="btn-ghost px-2 py-0.5 text-[11px]"
+                        onClick={() => setPreviewKey((k) => (k === f.key ? null : f.key))}
+                      >
+                        {previewKey === f.key ? "Verberg" : "Toon verstuurde prompt"}
+                      </button>
+                    </div>
+                    {previewKey === f.key && (
+                      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-brand-200 bg-brand-50 p-2 text-[11px] leading-relaxed text-brand-700">
+                        {f.key === "caption"
+                          ? renderCaptionPrompt(prompts.caption, params, brandContext)
+                          : renderImagePrompt(prompts[f.key], params, f.key)}
+                      </pre>
+                    )}
                   </div>
                 ))}
                 <button
                   className="btn-ghost"
-                  onClick={() => setPrompts(DEFAULT_PROMPTS)}
+                  onClick={() => {
+                    markDirty();
+                    setPrompts(DEFAULT_PROMPTS);
+                  }}
                 >
                   Herstel alle prompts naar standaard
                 </button>
@@ -501,7 +557,7 @@ export default function Page() {
             ).map(([m, label]) => (
               <button
                 key={m}
-                onClick={() => setMode(m)}
+                onClick={() => updateMode(m)}
                 className={`rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
                   mode === m ? "bg-white text-brand-900 shadow-sm" : "text-brand-500 hover:text-brand-700"
                 }`}
