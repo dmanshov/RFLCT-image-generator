@@ -140,23 +140,21 @@ export function renderImagePrompt(
 }
 
 /**
- * Prompt om een reeds gegenereerd beeld verder bij te werken op basis van een
- * korte front-end instructie. De back-end voorziet hier zelf de strikte
- * consistentie-instructies, zodat de gebruiker enkel hoeft te schrijven WAT er
- * moet wijzigen (geen full-detail prompt nodig).
+ * Prompt om een reeds gegenereerd beeld bij te werken op basis van een korte
+ * front-end instructie. De gevraagde wijzigingen moeten KORDAAT en VOLLEDIG
+ * worden toegepast; enkel wat niet genoemd wordt, blijft behouden.
  */
 export function renderFineTunePrompt(instruction: string): string {
   return [
-    "You are fine-tuning an EXISTING image. The provided image is the base and must stay almost entirely unchanged.",
-    "Apply ONLY the following adjustment requested by the user, and change nothing else:",
+    "Edit the provided image. Apply the following change(s) requested by the user — fully, decisively and clearly visibly in the result:",
     `"${instruction.trim()}"`,
-    "Keep absolutely everything else identical to the provided image: the same room, layout, furniture, objects, materials, colours, textures, lighting, camera angle, perspective, composition and framing.",
-    "Do not re-imagine, re-stage or regenerate the scene. Make the smallest possible edit that satisfies the request, and preserve maximum consistency with the original so it clearly looks like the exact same photo with only that single change applied.",
-    "If the request is ambiguous, stay conservative and keep the original look.",
+    "Every requested change MUST actually be carried out and be obviously visible; do not ignore, soften or only partially apply any of them.",
+    "Keep the parts of the scene that the request does not mention consistent with the original (same room, architecture, and untouched furniture and composition), so it still reads as the same photo — but the requested changes themselves must be applied boldly and completely, not minimally.",
     REALISM,
     "Output the single edited photo.",
   ].join(" ");
 }
+
 
 const SERVICE_DESCRIPTION: Record<GenerationParams["service"], string> = {
   staging:

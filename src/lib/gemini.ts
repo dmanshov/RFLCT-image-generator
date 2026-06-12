@@ -62,11 +62,10 @@ const REWRITE_PREAMBLE: Record<RewriteKind, string> = {
   finetune:
     "The following is an instruction to EDIT an existing image. Rewrite it into a single, clear " +
     "and COMPLETE instruction that explicitly enumerates EVERY requested change as a concrete, " +
-    "unambiguous step, so an image-editing model applies ALL of them and misses none. " +
-    "Do NOT add, invent or imply any change that was not requested. " +
-    "Keep all consistency rules fully intact: everything that is not explicitly changed must stay " +
-    "exactly identical (same room, layout, furniture, objects, materials, colours, textures, " +
-    "lighting, camera angle, perspective and composition). " +
+    "unambiguous step, and that tells the image-editing model to apply ALL of them fully, " +
+    "decisively and visibly (never partially or minimally). " +
+    "Do NOT add or invent changes that were not requested, and leave the parts of the scene that " +
+    "are not mentioned consistent with the original. " +
     "Return ONLY the rewritten instruction, no preamble.",
 };
 
