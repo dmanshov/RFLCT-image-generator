@@ -239,7 +239,7 @@ export default function Page() {
       const message =
         (data?.error as string) ||
         (res.status === 413
-          ? "De afbeeldingen zijn te groot voor de server (limiet ~4,5 MB). Probeer opnieuw — de beelden worden nu automatisch verkleind voor de caption."
+          ? "De afbeelding was te groot voor de server (limiet ~4,5 MB). De beelden worden nu automatisch verkleind voor verzending; probeer opnieuw."
           : `Server gaf een fout (${res.status}).`);
       throw new Error(message);
     }
@@ -252,11 +252,15 @@ export default function Page() {
   const runBefore = useCallback(async (): Promise<string> => {
     setStage((s) => ({ ...s, before: "busy" }));
     try {
+      // Geüploade referentiefoto verkleinen vóór verzending (kan een grote
+      // telefoonfoto zijn). De uitvoerresolutie wordt los bepaald door imageSize.
+      const uploadForReq =
+        mode === "upload" && uploadDataUrl ? await downscaleDataUrl(uploadDataUrl, 1568, 0.9) : undefined;
       const { image } = await postJson<{ image: string }>("/api/before", {
         mode,
         params,
         url: mode === "url" ? url : undefined,
-        uploadDataUrl: mode === "upload" ? uploadDataUrl : undefined,
+        uploadDataUrl: uploadForReq,
         promptTemplate: mode === "params" ? prompts.beforeParams : prompts.beforeReference,
       });
       setBeforeImg(image);
@@ -272,9 +276,13 @@ export default function Page() {
     async (before: string): Promise<string> => {
       setStage((s) => ({ ...s, after: "busy" }));
       try {
+        // De "voor"-foto verkleinen vóór verzending zodat de payload onder de
+        // server-limiet blijft. De "na"-foto wordt nog steeds op volle resolutie
+        // (imageSize) gegenereerd — input-resolutie staat los van output.
+        const beforeForReq = await downscaleDataUrl(before, 1568, 0.9);
         const { image } = await postJson<{ image: string }>("/api/after", {
           params,
-          beforeDataUrl: before,
+          beforeDataUrl: beforeForReq,
           promptTemplate: params.service === "staging" ? prompts.afterStaging : prompts.afterRetouch,
         });
         setAfterImg(image);
@@ -372,8 +380,10 @@ export default function Page() {
     if (!current || !instruction.trim()) return false;
     setError(null);
     try {
+      // Bronbeeld verkleinen vóór verzending; de uitvoer blijft op volle resolutie.
+      const imageForReq = await downscaleDataUrl(current, 1568, 0.9);
       const { image } = await postJson<{ image: string }>("/api/finetune", {
-        image: current,
+        image: imageForReq,
         instruction,
       });
       if (which === "before") setBeforeImg(image);
